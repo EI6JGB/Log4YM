@@ -201,75 +201,143 @@ sequenceDiagram
 
 ### Monorepo Structure
 
+The key insight is that **plugins are full-stack modules** - each plugin has both frontend (React) and backend (.NET) components that must stay in sync.
+
 ```
 log4ym/
-├── package.json                 # Workspace root
-├── turbo.json                   # Turborepo configuration
+├── Log4YM.sln                   # .NET solution file
+├── package.json                 # Frontend workspace root
 ├── pnpm-workspace.yaml          # PNPM workspace config
 ├── docker-compose.yml           # Local dev / deployment
 │
-├── apps/
-│   ├── web/                     # React SPA (Frontend)
-│   │   ├── src/
-│   │   │   ├── App.tsx
-│   │   │   ├── main.tsx
-│   │   │   ├── components/
-│   │   │   ├── hooks/
-│   │   │   │   ├── useWebSocket.ts
-│   │   │   │   └── useServerEvents.ts
-│   │   │   ├── store/
-│   │   │   └── api/            # API client (REST + WebSocket)
-│   │   │       ├── client.ts
-│   │   │       ├── websocket.ts
-│   │   │       └── types.ts
-│   │   ├── index.html
-│   │   ├── vite.config.ts
-│   │   └── package.json
+├── src/
+│   ├── Log4YM.Server/           # ASP.NET Core Backend
+│   │   ├── Program.cs
+│   │   ├── Log4YM.Server.csproj
+│   │   ├── appsettings.json
+│   │   │
+│   │   ├── Core/                # Core server infrastructure
+│   │   │   ├── Events/          # Server-side event bus
+│   │   │   │   ├── IEventBus.cs
+│   │   │   │   ├── EventBus.cs
+│   │   │   │   └── Events.cs    # Shared event types
+│   │   │   ├── Database/
+│   │   │   │   ├── LogDbContext.cs
+│   │   │   │   └── Migrations/
+│   │   │   └── Services/        # Core services (serial, UDP base classes)
+│   │   │
+│   │   ├── Hubs/                # SignalR Hubs
+│   │   │   └── LogHub.cs        # Main real-time hub
+│   │   │
+│   │   └── Plugins/             # Backend plugin modules (loaded dynamically)
+│   │       ├── IPlugin.cs       # Plugin interface
+│   │       ├── PluginLoader.cs
+│   │       └── (plugins register their services here)
 │   │
-│   └── server/                  # Node.js/Fastify Backend
+│   ├── Log4YM.Contracts/        # Shared types between client & server
+│   │   ├── Log4YM.Contracts.csproj
+│   │   ├── Events/              # Event DTOs (used by SignalR)
+│   │   │   ├── CallsignFocusedEvent.cs
+│   │   │   ├── SpotReceivedEvent.cs
+│   │   │   ├── RotatorPositionEvent.cs
+│   │   │   └── QsoLoggedEvent.cs
+│   │   ├── Models/              # Shared domain models
+│   │   │   ├── Qso.cs
+│   │   │   ├── Spot.cs
+│   │   │   └── Station.cs
+│   │   └── Api/                 # API request/response DTOs
+│   │
+│   └── Log4YM.Web/              # React SPA (Frontend)
 │       ├── src/
-│       │   ├── index.ts         # Entry point
-│       │   ├── server.ts        # Fastify setup
-│       │   ├── routes/          # REST API routes
-│       │   │   ├── qso.ts
-│       │   │   ├── spots.ts
-│       │   │   ├── rotator.ts
-│       │   │   └── settings.ts
-│       │   ├── websocket/       # WebSocket handlers
-│       │   │   ├── handler.ts
-│       │   │   └── broadcast.ts
-│       │   ├── services/        # Native services
-│       │   │   ├── udp-multicast.ts
-│       │   │   ├── serial-port.ts
-│       │   │   ├── telnet-cluster.ts
-│       │   │   ├── rotator.ts
-│       │   │   └── rig-cat.ts
-│       │   ├── events/          # Server-side event bus
-│       │   │   ├── bus.ts
-│       │   │   └── types.ts
-│       │   └── db/              # Database layer
-│       │       ├── sqlite.ts
-│       │       ├── migrations/
-│       │       └── repositories/
-│       ├── Dockerfile
+│       │   ├── App.tsx
+│       │   ├── main.tsx
+│       │   ├── core/            # Core frontend infrastructure
+│       │   │   ├── events/      # Client-side event bus
+│       │   │   ├── signalr/     # SignalR client setup
+│       │   │   └── api/         # REST API client
+│       │   ├── components/      # Shared UI components
+│       │   ├── hooks/
+│       │   └── plugins/         # Frontend plugin mounting
+│       ├── index.html
+│       ├── vite.config.ts
 │       └── package.json
 │
-├── packages/
-│   ├── core/                    # Shared core library
-│   │   ├── src/
-│   │   │   ├── types/          # TypeScript interfaces
-│   │   │   ├── adif/           # ADIF parser/writer
-│   │   │   ├── callsign/       # Callsign utilities
-│   │   │   └── utils/
-│   │   └── package.json
+├── plugins/                     # FULL-STACK PLUGINS (each has frontend + backend)
 │   │
-│   ├── plugin-sdk/              # Plugin development kit
-│   │   ├── src/
-│   │   │   ├── PluginBase.ts
-│   │   │   ├── hooks/
-│   │   │   └── components/
-│   │   └── package.json
+│   ├── cluster/                 # DX Cluster Plugin
+│   │   ├── Log4YM.Plugin.Cluster/           # Backend (.NET)
+│   │   │   ├── Log4YM.Plugin.Cluster.csproj
+│   │   │   ├── ClusterPlugin.cs             # IPlugin implementation
+│   │   │   ├── Services/
+│   │   │   │   ├── TelnetClusterService.cs  # Telnet connection
+│   │   │   │   └── UdpMulticastService.cs   # UDP listener
+│   │   │   ├── Hubs/
+│   │   │   │   └── ClusterHub.cs            # SignalR hub for spots
+│   │   │   └── Endpoints/
+│   │   │       └── ClusterEndpoints.cs      # REST API
+│   │   │
+│   │   └── cluster-ui/                      # Frontend (React)
+│   │       ├── src/
+│   │       │   ├── index.ts                 # Plugin registration
+│   │       │   ├── ClusterPanel.tsx
+│   │       │   ├── SpotList.tsx
+│   │       │   ├── hooks/
+│   │       │   │   └── useClusterHub.ts     # SignalR subscription
+│   │       │   └── filters/
+│   │       ├── plugin.json
+│   │       └── package.json
 │   │
+│   ├── map-globe/               # Map/Globe Plugin
+│   │   ├── Log4YM.Plugin.MapGlobe/          # Backend (.NET)
+│   │   │   ├── Log4YM.Plugin.MapGlobe.csproj
+│   │   │   ├── MapGlobePlugin.cs
+│   │   │   ├── Services/
+│   │   │   │   ├── RotatorService.cs        # Serial port control
+│   │   │   │   └── BearingCalculator.cs
+│   │   │   ├── Hubs/
+│   │   │   │   └── RotatorHub.cs
+│   │   │   └── Endpoints/
+│   │   │       └── RotatorEndpoints.cs
+│   │   │
+│   │   └── map-globe-ui/                    # Frontend (React)
+│   │       ├── src/
+│   │       │   ├── index.ts
+│   │       │   ├── MapGlobePanel.tsx
+│   │       │   ├── layers/
+│   │       │   ├── controls/
+│   │       │   └── hooks/
+│   │       │       └── useRotatorHub.ts
+│   │       ├── plugin.json
+│   │       └── package.json
+│   │
+│   ├── log-history/             # Log History Plugin
+│   │   ├── Log4YM.Plugin.LogHistory/        # Backend (.NET)
+│   │   │   ├── Services/
+│   │   │   │   └── AdifService.cs           # ADIF import/export
+│   │   │   └── Endpoints/
+│   │   │       └── QsoEndpoints.cs
+│   │   │
+│   │   └── log-history-ui/                  # Frontend (React)
+│   │       ├── src/
+│   │       │   ├── LogHistoryPanel.tsx
+│   │       │   └── QsoGrid.tsx
+│   │       └── package.json
+│   │
+│   └── log-entry/               # Log Entry Plugin
+│       ├── Log4YM.Plugin.LogEntry/          # Backend (.NET)
+│       │   ├── Services/
+│       │   │   ├── QrzLookupService.cs
+│       │   │   └── CallsignValidator.cs
+│       │   └── Endpoints/
+│       │       └── LookupEndpoints.cs
+│       │
+│       └── log-entry-ui/                    # Frontend (React)
+│           ├── src/
+│           │   ├── LogEntryPanel.tsx
+│           │   └── QrzLookup.tsx
+│           └── package.json
+│
+├── packages/                    # Shared frontend packages
 │   ├── ui/                      # Shared UI components
 │   │   ├── src/
 │   │   │   ├── Button/
@@ -278,68 +346,160 @@ log4ym/
 │   │   │   └── theme/
 │   │   └── package.json
 │   │
-│   └── docking/                 # Docking framework wrapper
+│   └── plugin-sdk/              # Frontend plugin development kit
 │       ├── src/
-│       │   ├── DockingProvider.tsx
-│       │   ├── DockPanel.tsx
-│       │   └── LayoutManager.ts
-│       └── package.json
-│
-├── plugins/                     # Official plugins
-│   ├── cluster/
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── ClusterPanel.tsx
-│   │   │   ├── SpotList.tsx
-│   │   │   └── filters/
-│   │   ├── plugin.json         # Plugin manifest
-│   │   └── package.json
-│   │
-│   ├── map-globe/
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── MapGlobePanel.tsx
-│   │   │   ├── layers/
-│   │   │   │   ├── BeamHeadingLayer.tsx
-│   │   │   │   ├── RotatorLayer.tsx
-│   │   │   │   ├── QSOTargetLayer.tsx
-│   │   │   │   ├── GreylineLayer.tsx
-│   │   │   │   └── GridSquareLayer.tsx
-│   │   │   ├── controls/
-│   │   │   │   ├── RotatorControl.tsx
-│   │   │   │   └── ProjectionToggle.tsx
-│   │   │   └── utils/
-│   │   │       ├── bearing.ts
-│   │   │       └── geodesic.ts
-│   │   ├── plugin.json
-│   │   └── package.json
-│   │
-│   ├── log-history/
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── LogHistoryPanel.tsx
-│   │   │   ├── QSOGrid.tsx
-│   │   │   └── adif/
-│   │   ├── plugin.json
-│   │   └── package.json
-│   │
-│   └── log-entry/
-│       ├── src/
-│       │   ├── index.ts
-│       │   ├── LogEntryPanel.tsx
-│       │   ├── QRZLookup.tsx
-│       │   └── validation/
-│       ├── plugin.json
+│       │   ├── PluginBase.ts
+│       │   ├── hooks/
+│       │   │   ├── useSignalR.ts
+│       │   │   └── useEventBus.ts
+│       │   └── components/
 │       └── package.json
 │
 ├── tools/
-│   ├── plugin-cli/              # Plugin scaffolding CLI
-│   └── build-scripts/
+│   └── plugin-cli/              # Plugin scaffolding CLI (creates both frontend + backend)
 │
 └── docs/
     ├── prds/
     ├── architecture/
     └── plugin-development/
+```
+
+### Full-Stack Plugin Architecture
+
+Each plugin is a **self-contained module** with both frontend and backend components. This ensures:
+
+1. **Version Sync**: Frontend and backend are versioned together
+2. **Contract Enforcement**: Shared types in `Log4YM.Contracts` ensure API compatibility
+3. **Independent Development**: Teams can work on plugins in isolation
+4. **Hot-Reload**: Both frontend and backend support development hot-reload
+
+```mermaid
+flowchart TB
+    subgraph Plugin["cluster/ (Full-Stack Plugin)"]
+        subgraph Backend["Log4YM.Plugin.Cluster/ (.NET)"]
+            Service[TelnetClusterService]
+            Hub[ClusterHub : Hub]
+            Endpoints["/api/cluster/*"]
+        end
+
+        subgraph Frontend["cluster-ui/ (React)"]
+            Panel[ClusterPanel.tsx]
+            Hook[useClusterHub.ts]
+        end
+
+        subgraph Shared["Via Log4YM.Contracts"]
+            DTO[SpotReceivedEvent.cs]
+        end
+    end
+
+    Service -->|publishes| Hub
+    Hub <-->|SignalR| Hook
+    Hook --> Panel
+    Endpoints <-->|REST| Panel
+    DTO -.->|types| Hub
+    DTO -.->|types| Hook
+```
+
+### Plugin Registration & Discovery
+
+**Backend Plugin Interface (.NET):**
+
+```csharp
+// src/Log4YM.Server/Plugins/IPlugin.cs
+
+public interface IPlugin
+{
+    string Id { get; }
+    string Name { get; }
+    string Version { get; }
+
+    // Called during startup to register services
+    void ConfigureServices(IServiceCollection services);
+
+    // Called to register endpoints and hubs
+    void ConfigureApp(WebApplication app);
+}
+
+// Example: plugins/cluster/Log4YM.Plugin.Cluster/ClusterPlugin.cs
+
+public class ClusterPlugin : IPlugin
+{
+    public string Id => "cluster";
+    public string Name => "DX Cluster";
+    public string Version => "1.0.0";
+
+    public void ConfigureServices(IServiceCollection services)
+    {
+        services.AddSingleton<ITelnetClusterService, TelnetClusterService>();
+        services.AddSingleton<IUdpMulticastService, UdpMulticastService>();
+    }
+
+    public void ConfigureApp(WebApplication app)
+    {
+        app.MapHub<ClusterHub>("/hubs/cluster");
+        app.MapClusterEndpoints();  // Extension method
+    }
+}
+```
+
+**Frontend Plugin Manifest (plugin.json):**
+
+```json
+{
+  "id": "cluster",
+  "name": "DX Cluster",
+  "version": "1.0.0",
+  "description": "Real-time DX cluster spot integration",
+  "backendRequired": true,
+  "panels": [
+    {
+      "id": "cluster-main",
+      "title": "DX Cluster",
+      "component": "ClusterPanel",
+      "icon": "radio-tower",
+      "defaultSize": { "width": 400, "height": 300 }
+    }
+  ],
+  "signalRHubs": ["cluster"],
+  "apiEndpoints": ["/api/cluster"]
+}
+```
+
+**Plugin Loader (Server):**
+
+```csharp
+// src/Log4YM.Server/Plugins/PluginLoader.cs
+
+public static class PluginLoader
+{
+    public static void LoadPlugins(WebApplicationBuilder builder)
+    {
+        var pluginDir = Path.Combine(AppContext.BaseDirectory, "plugins");
+
+        foreach (var dll in Directory.GetFiles(pluginDir, "Log4YM.Plugin.*.dll"))
+        {
+            var assembly = Assembly.LoadFrom(dll);
+            var pluginTypes = assembly.GetTypes()
+                .Where(t => typeof(IPlugin).IsAssignableFrom(t) && !t.IsInterface);
+
+            foreach (var pluginType in pluginTypes)
+            {
+                var plugin = (IPlugin)Activator.CreateInstance(pluginType)!;
+                plugin.ConfigureServices(builder.Services);
+                builder.Services.AddSingleton(plugin);
+            }
+        }
+    }
+
+    public static void ConfigurePlugins(WebApplication app)
+    {
+        var plugins = app.Services.GetServices<IPlugin>();
+        foreach (var plugin in plugins)
+        {
+            plugin.ConfigureApp(app);
+        }
+    }
+}
 ```
 
 ### Technology Stack
@@ -356,21 +516,23 @@ log4ym/
 | Data Grid | TanStack Table | Headless, virtualized, performant |
 | Forms | React Hook Form | Performant form handling |
 | Build | Vite | Fast HMR, ESM native |
-| WebSocket | Native + reconnecting-websocket | Auto-reconnect, message queuing |
+| WebSocket | SignalR Client | Native .NET SignalR integration |
 | Maps | Leaflet + CesiumJS | 2D/3D mapping |
 
-#### Backend (Node.js Server)
+#### Backend (.NET 8 / ASP.NET Core)
 
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
-| Runtime | Node.js 20+ | LTS, native module support |
-| Framework | Fastify | Fast, schema validation, WebSocket support |
-| WebSocket | @fastify/websocket | Native Fastify integration |
-| UDP | Node dgram | Native multicast support |
-| Serial | serialport | Industry standard, cross-platform |
-| Database | SQLite (better-sqlite3) | Local, no external server, fast |
-| Validation | Zod | TypeScript-first schema validation |
-| Logging | Pino | Fast JSON logging (Fastify default) |
+| Runtime | .NET 8 | LTS, high performance, cross-platform |
+| Framework | ASP.NET Core Minimal APIs | Fast, clean routing, excellent for APIs |
+| Real-time | SignalR | WebSocket abstraction with fallback, strongly typed hubs |
+| UDP | System.Net.Sockets | Native UDP multicast support |
+| Serial | System.IO.Ports | Built-in serial port support |
+| Database | SQLite + EF Core | Local, no external server, migrations |
+| Validation | FluentValidation | Expressive validation rules |
+| Logging | Serilog | Structured logging, multiple sinks |
+| DI | Built-in | ASP.NET Core native DI container |
+| OpenAPI | Swashbuckle | Auto-generated API docs |
 
 #### Monorepo Tooling
 
@@ -1349,12 +1511,12 @@ gantt
     title Log4YM Development Phases
     dateFormat  YYYY-MM-DD
     section Phase 1: Foundation
-    Monorepo setup (pnpm + Turbo)     :p1a, 2024-01-01, 5d
-    Fastify server + SQLite           :p1b, after p1a, 7d
+    Solution setup (.NET + pnpm)      :p1a, 2024-01-01, 5d
+    ASP.NET Core server + EF Core     :p1b, after p1a, 7d
     React SPA + Vite setup            :p1c, after p1a, 5d
-    WebSocket integration             :p1d, after p1b, 5d
+    SignalR integration               :p1d, after p1b, 5d
     FlexLayout docking system         :p1e, after p1c, 5d
-    Plugin SDK + Event Bus            :p1f, after p1e, 7d
+    Plugin SDK (both ends)            :p1f, after p1e, 7d
 
     section Phase 2: Core Plugins
     Log Entry plugin                  :p2a, after p1e, 10d
@@ -1378,13 +1540,14 @@ gantt
 
 ### Phase 1: Foundation
 
-- [ ] Initialize monorepo with pnpm + Turborepo
-- [ ] Create Fastify server with SQLite database
+- [ ] Initialize solution (.NET 8 + pnpm workspace)
+- [ ] Create ASP.NET Core server with EF Core + SQLite
 - [ ] Create React SPA with Vite
-- [ ] Implement WebSocket communication layer
+- [ ] Implement SignalR real-time communication
 - [ ] Implement FlexLayout docking system
-- [ ] Create plugin SDK base classes
-- [ ] Implement typed Event Bus (client + server)
+- [ ] Create plugin SDK (IPlugin interface + React hooks)
+- [ ] Implement typed Event Bus (server + client sync)
+- [ ] Set up Log4YM.Contracts for shared types
 
 ### Phase 2: Core Plugins
 
@@ -1447,8 +1610,12 @@ version: '3.8'
 services:
   log4ym:
     image: log4ym/server:latest
+    build:
+      context: .
+      dockerfile: src/Log4YM.Server/Dockerfile
     ports:
-      - "3000:3000"
+      - "5000:5000"              # HTTP
+      - "5001:5001"              # HTTPS (optional)
     volumes:
       - ./data:/app/data          # SQLite database
       - ./config:/app/config      # Configuration files
@@ -1456,11 +1623,49 @@ services:
       - /dev/ttyUSB0:/dev/ttyUSB0 # Rotator serial port
       - /dev/ttyUSB1:/dev/ttyUSB1 # Radio CAT port
     environment:
-      - LOG4YM_BIND=0.0.0.0       # Allow LAN access
-      - LOG4YM_PORT=3000
-      - QRZ_USERNAME=${QRZ_USER}
-      - QRZ_PASSWORD=${QRZ_PASS}
+      - ASPNETCORE_URLS=http://+:5000
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/log4ym.db
+      - Qrz__Username=${QRZ_USER}
+      - Qrz__Password=${QRZ_PASS}
     restart: unless-stopped
+```
+
+**Example Dockerfile (.NET):**
+
+```dockerfile
+# src/Log4YM.Server/Dockerfile
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+WORKDIR /app
+EXPOSE 5000
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Copy solution and restore
+COPY Log4YM.sln .
+COPY src/Log4YM.Server/*.csproj src/Log4YM.Server/
+COPY src/Log4YM.Contracts/*.csproj src/Log4YM.Contracts/
+COPY plugins/*/Log4YM.Plugin.*/*.csproj ./plugins/
+RUN dotnet restore
+
+# Build
+COPY . .
+RUN dotnet build -c Release -o /app/build
+
+FROM build AS publish
+RUN dotnet publish src/Log4YM.Server -c Release -o /app/publish
+
+# Final image
+FROM base AS final
+WORKDIR /app
+COPY --from=publish /app/publish .
+
+# Copy frontend build (from separate Node build step)
+COPY --from=node-build /app/dist ./wwwroot
+
+ENTRYPOINT ["dotnet", "Log4YM.Server.dll"]
 ```
 
 ## Risks and Mitigations
