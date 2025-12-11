@@ -222,8 +222,8 @@ log4ym/
 │   │   │   │   ├── EventBus.cs
 │   │   │   │   └── Events.cs    # Shared event types
 │   │   │   ├── Database/
-│   │   │   │   ├── LogDbContext.cs
-│   │   │   │   └── Migrations/
+│   │   │   │   ├── MongoDbContext.cs
+│   │   │   │   └── Repositories/
 │   │   │   └── Services/        # Core services (serial, UDP base classes)
 │   │   │
 │   │   ├── Hubs/                # SignalR Hubs
@@ -528,7 +528,7 @@ public static class PluginLoader
 | Real-time | SignalR | WebSocket abstraction with fallback, strongly typed hubs |
 | UDP | System.Net.Sockets | Native UDP multicast support |
 | Serial | System.IO.Ports | Built-in serial port support |
-| Database | SQLite + EF Core | Local, no external server, migrations |
+| Database | MongoDB | Document store, flexible schema, great for QSO/spot data |
 | Validation | FluentValidation | Expressive validation rules |
 | Logging | Serilog | Structured logging, multiple sinks |
 | DI | Built-in | ASP.NET Core native DI container |
@@ -1380,77 +1380,254 @@ server.get('/ws', { websocket: true }, (connection, req) => {
 
 ### Data Storage
 
-#### SQLite Schema
+#### MongoDB Collections
 
-```sql
--- Core QSO table (ADIF-aligned)
-CREATE TABLE qsos (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  callsign TEXT NOT NULL,
-  qso_date TEXT NOT NULL,      -- YYYYMMDD
-  time_on TEXT NOT NULL,       -- HHMMSS
-  time_off TEXT,
-  band TEXT NOT NULL,
-  mode TEXT NOT NULL,
-  freq REAL,
-  rst_sent TEXT,
-  rst_rcvd TEXT,
-  name TEXT,
-  qth TEXT,
-  grid TEXT,
-  dxcc INTEGER,
-  country TEXT,
-  state TEXT,
-  county TEXT,
-  cq_zone INTEGER,
-  itu_zone INTEGER,
-  qsl_sent TEXT,
-  qsl_rcvd TEXT,
-  lotw_sent TEXT,
-  lotw_rcvd TEXT,
-  comment TEXT,
-  -- Full ADIF fields as JSON for extensibility
-  adif_extra TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+MongoDB is ideal for Log4YM because:
+- **Flexible schema**: ADIF has 100+ optional fields - documents handle this naturally
+- **Embedded documents**: QSL status, contest info can be nested
+- **TTL indexes**: Auto-expire old cluster spots
+- **Text search**: Full-text search on comments, notes
+- **Aggregation**: Statistics, band/mode breakdowns
 
-CREATE INDEX idx_qsos_callsign ON qsos(callsign);
-CREATE INDEX idx_qsos_date ON qsos(qso_date);
-CREATE INDEX idx_qsos_band_mode ON qsos(band, mode);
+**Database: `log4ym`**
 
--- Cluster spots cache
-CREATE TABLE spots (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  dx_call TEXT NOT NULL,
-  spotter TEXT NOT NULL,
-  freq REAL NOT NULL,
-  comment TEXT,
-  timestamp TEXT NOT NULL,
-  source TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+```javascript
+// Collection: qsos
+{
+  _id: ObjectId("..."),
+  callsign: "W1AW",
+  qsoDate: ISODate("2024-01-15T14:30:00Z"),
+  timeOn: "143000",
+  timeOff: "143500",
+  band: "20m",
+  mode: "SSB",
+  frequency: 14.250,
+  rstSent: "59",
+  rstRcvd: "57",
 
-CREATE INDEX idx_spots_timestamp ON spots(timestamp);
-CREATE INDEX idx_spots_freq ON spots(freq);
+  // Station info (embedded document)
+  station: {
+    name: "John Smith",
+    qth: "Newington, CT",
+    grid: "FN31pr",
+    country: "United States",
+    dxcc: 291,
+    cqZone: 5,
+    ituZone: 8,
+    state: "CT",
+    county: "Hartford"
+  },
 
--- Plugin settings storage
-CREATE TABLE plugin_settings (
-  plugin_id TEXT NOT NULL,
-  key TEXT NOT NULL,
-  value TEXT,
-  PRIMARY KEY (plugin_id, key)
-);
+  // QSL status (embedded document)
+  qsl: {
+    sent: "Y",
+    sentDate: ISODate("2024-01-16"),
+    rcvd: "N",
+    rcvdDate: null,
+    lotw: { sent: "Y", rcvd: "N" },
+    eqsl: { sent: "N", rcvd: "N" },
+    clublog: { sent: "Y" }
+  },
 
--- Layout persistence
-CREATE TABLE layouts (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  layout_json TEXT NOT NULL,
-  is_default INTEGER DEFAULT 0,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+  // Contest info (optional embedded document)
+  contest: {
+    id: "CQWW-SSB",
+    serialSent: "001",
+    serialRcvd: "123",
+    exchange: "5NN CT"
+  },
+
+  // Extensible - any ADIF field can be added
+  comment: "Good signal, first QSO with CT",
+  notes: "Met at Dayton 2023",
+
+  // Metadata
+  createdAt: ISODate("2024-01-15T14:35:00Z"),
+  updatedAt: ISODate("2024-01-16T10:00:00Z"),
+  createdBy: "log-entry-plugin"
+}
+
+// Collection: spots (with TTL index for auto-expiry)
+{
+  _id: ObjectId("..."),
+  dxCall: "VK9XY",
+  spotter: "W1AW",
+  frequency: 14.025,
+  mode: "CW",
+  comment: "UP 2",
+  source: "dx.example.com",       // Cluster source
+  timestamp: ISODate("2024-01-15T14:30:00Z"),
+  createdAt: ISODate("2024-01-15T14:30:00Z"),  // TTL index on this field
+
+  // Enriched data (added by lookup)
+  dxStation: {
+    country: "Christmas Island",
+    dxcc: 35,
+    grid: "OH29",
+    continent: "OC"
+  }
+}
+
+// Collection: settings
+{
+  _id: "station",
+  callsign: "EI2KC",
+  grid: "IO63",
+  latitude: 53.3498,
+  longitude: -6.2603,
+  qrzUsername: "ei2kc",
+  // Encrypted or reference to secrets manager
+  qrzApiKey: "encrypted:..."
+}
+
+// Collection: pluginSettings
+{
+  _id: "cluster",
+  connections: [
+    { host: "dx.example.com", port: 7300, enabled: true },
+    { host: "skimmer.example.com", port: 7373, enabled: true }
+  ],
+  filters: {
+    bands: ["20m", "40m", "15m"],
+    modes: ["CW", "SSB"],
+    minFreq: 14000,
+    maxFreq: 14350
+  }
+}
+
+// Collection: layouts
+{
+  _id: "default",
+  name: "Default Layout",
+  isDefault: true,
+  layout: {
+    // FlexLayout JSON model
+    global: { ... },
+    borders: [ ... ],
+    layout: { ... }
+  },
+  createdAt: ISODate("2024-01-01"),
+  updatedAt: ISODate("2024-01-15")
+}
+```
+
+**Indexes:**
+
+```javascript
+// qsos collection
+db.qsos.createIndex({ callsign: 1 })
+db.qsos.createIndex({ qsoDate: -1 })
+db.qsos.createIndex({ band: 1, mode: 1 })
+db.qsos.createIndex({ "station.dxcc": 1 })
+db.qsos.createIndex({ "station.grid": 1 })
+db.qsos.createIndex({ "$**": "text" })  // Full-text search
+
+// spots collection (TTL: auto-delete after 24 hours)
+db.spots.createIndex({ createdAt: 1 }, { expireAfterSeconds: 86400 })
+db.spots.createIndex({ frequency: 1 })
+db.spots.createIndex({ dxCall: 1 })
+db.spots.createIndex({ timestamp: -1 })
+```
+
+**C# MongoDB Models:**
+
+```csharp
+// src/Log4YM.Contracts/Models/Qso.cs
+
+public class Qso
+{
+    [BsonId]
+    [BsonRepresentation(BsonType.ObjectId)]
+    public string Id { get; set; } = null!;
+
+    [BsonElement("callsign")]
+    public string Callsign { get; set; } = null!;
+
+    [BsonElement("qsoDate")]
+    public DateTime QsoDate { get; set; }
+
+    [BsonElement("band")]
+    public string Band { get; set; } = null!;
+
+    [BsonElement("mode")]
+    public string Mode { get; set; } = null!;
+
+    [BsonElement("frequency")]
+    public double? Frequency { get; set; }
+
+    [BsonElement("rstSent")]
+    public string? RstSent { get; set; }
+
+    [BsonElement("rstRcvd")]
+    public string? RstRcvd { get; set; }
+
+    [BsonElement("station")]
+    public StationInfo? Station { get; set; }
+
+    [BsonElement("qsl")]
+    public QslStatus? Qsl { get; set; }
+
+    [BsonElement("contest")]
+    public ContestInfo? Contest { get; set; }
+
+    [BsonExtraElements]
+    public BsonDocument? AdifExtra { get; set; }  // Catches any extra ADIF fields
+
+    [BsonElement("createdAt")]
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    [BsonElement("updatedAt")]
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class StationInfo
+{
+    public string? Name { get; set; }
+    public string? Qth { get; set; }
+    public string? Grid { get; set; }
+    public string? Country { get; set; }
+    public int? Dxcc { get; set; }
+    public int? CqZone { get; set; }
+    public int? ItuZone { get; set; }
+}
+```
+
+**Repository Pattern:**
+
+```csharp
+// src/Log4YM.Server/Core/Database/Repositories/QsoRepository.cs
+
+public interface IQsoRepository
+{
+    Task<Qso> GetByIdAsync(string id);
+    Task<IEnumerable<Qso>> GetRecentAsync(int limit = 100);
+    Task<IEnumerable<Qso>> SearchAsync(QsoSearchCriteria criteria);
+    Task<Qso> CreateAsync(Qso qso);
+    Task UpdateAsync(Qso qso);
+    Task DeleteAsync(string id);
+    Task<QsoStatistics> GetStatisticsAsync();
+}
+
+public class QsoRepository : IQsoRepository
+{
+    private readonly IMongoCollection<Qso> _collection;
+
+    public QsoRepository(IMongoDatabase database)
+    {
+        _collection = database.GetCollection<Qso>("qsos");
+    }
+
+    public async Task<IEnumerable<Qso>> GetRecentAsync(int limit = 100)
+    {
+        return await _collection
+            .Find(_ => true)
+            .SortByDescending(q => q.QsoDate)
+            .Limit(limit)
+            .ToListAsync();
+    }
+
+    // ... other methods
+}
 ```
 
 ### Security Considerations
@@ -1459,7 +1636,7 @@ CREATE TABLE layouts (
 2. **CORS**: Configurable allowed origins
 3. **CSP Headers**: Strict content security policy
 4. **Input Validation**: All user inputs validated with Zod schemas
-5. **API Keys**: Stored encrypted in SQLite or environment variables
+5. **API Keys**: Stored encrypted in MongoDB or environment variables
 6. **Network Binding**: Default to localhost only, explicit config for LAN/remote
 7. **HTTPS**: Optional TLS termination for remote access
 
@@ -1512,7 +1689,7 @@ gantt
     dateFormat  YYYY-MM-DD
     section Phase 1: Foundation
     Solution setup (.NET + pnpm)      :p1a, 2024-01-01, 5d
-    ASP.NET Core server + EF Core     :p1b, after p1a, 7d
+    ASP.NET Core server + MongoDB      :p1b, after p1a, 7d
     React SPA + Vite setup            :p1c, after p1a, 5d
     SignalR integration               :p1d, after p1b, 5d
     FlexLayout docking system         :p1e, after p1c, 5d
@@ -1541,7 +1718,7 @@ gantt
 ### Phase 1: Foundation
 
 - [ ] Initialize solution (.NET 8 + pnpm workspace)
-- [ ] Create ASP.NET Core server with EF Core + SQLite
+- [ ] Create ASP.NET Core server with MongoDB
 - [ ] Create React SPA with Vite
 - [ ] Implement SignalR real-time communication
 - [ ] Implement FlexLayout docking system
@@ -1617,7 +1794,6 @@ services:
       - "5000:5000"              # HTTP
       - "5001:5001"              # HTTPS (optional)
     volumes:
-      - ./data:/app/data          # SQLite database
       - ./config:/app/config      # Configuration files
     devices:
       - /dev/ttyUSB0:/dev/ttyUSB0 # Rotator serial port
@@ -1625,10 +1801,41 @@ services:
     environment:
       - ASPNETCORE_URLS=http://+:5000
       - ASPNETCORE_ENVIRONMENT=Production
-      - ConnectionStrings__DefaultConnection=Data Source=/app/data/log4ym.db
+      - MongoDB__ConnectionString=mongodb://mongodb:27017
+      - MongoDB__DatabaseName=log4ym
       - Qrz__Username=${QRZ_USER}
       - Qrz__Password=${QRZ_PASS}
+    depends_on:
+      - mongodb
     restart: unless-stopped
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d  # Init scripts
+    environment:
+      - MONGO_INITDB_DATABASE=log4ym
+    restart: unless-stopped
+
+  # Optional: MongoDB admin UI
+  mongo-express:
+    image: mongo-express:latest
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=${MONGO_EXPRESS_PASS:-admin}
+    depends_on:
+      - mongodb
+    profiles:
+      - dev  # Only start with: docker-compose --profile dev up
+
+volumes:
+  mongodb_data:
 ```
 
 **Example Dockerfile (.NET):**
