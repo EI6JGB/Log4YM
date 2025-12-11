@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Book, Search, Calendar, Globe, Radio, Filter, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from 'lucide-react';
+import { Book, Search, Calendar, Radio, Filter, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from 'lucide-react';
 import { api } from '../api/client';
 import { GlassPanel } from '../components/GlassPanel';
+import { getCountryFlag } from '../core/countryFlags';
 
 export function LogHistoryPlugin() {
   const [callsignSearch, setCallsignSearch] = useState('');
@@ -234,13 +235,14 @@ export function LogHistoryPlugin() {
                 <th className="py-2 px-3 font-medium">Mode</th>
                 <th className="py-2 px-3 font-medium">RST S/R</th>
                 <th className="py-2 px-3 font-medium">Name</th>
+                <th className="py-2 px-1 font-medium text-center" title="Country Flag">🏳️</th>
                 <th className="py-2 px-3 font-medium">Country</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-gray-500">
+                  <td colSpan={9} className="py-8 text-center text-gray-500">
                     <div className="flex items-center justify-center gap-2">
                       <Radio className="w-4 h-4 animate-spin" />
                       Loading...
@@ -249,7 +251,7 @@ export function LogHistoryPlugin() {
                 </tr>
               ) : qsos.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-gray-500">
+                  <td colSpan={9} className="py-8 text-center text-gray-500">
                     No QSOs found
                   </td>
                 </tr>
@@ -285,13 +287,13 @@ export function LogHistoryPlugin() {
                     <td className="py-2 px-3 text-gray-300 truncate max-w-[120px]">
                       {qso.station?.name || qso.name || '-'}
                     </td>
+                    <td className="py-2 px-1 text-center text-lg">
+                      {getCountryFlag(qso.station?.country || qso.country)}
+                    </td>
                     <td className="py-2 px-3 text-gray-400">
-                      <div className="flex items-center gap-1">
-                        <Globe className="w-3 h-3" />
-                        <span className="truncate max-w-[100px]">
-                          {qso.station?.country || qso.country || '-'}
-                        </span>
-                      </div>
+                      <span className="truncate max-w-[100px]">
+                        {qso.station?.country || qso.country || '-'}
+                      </span>
                     </td>
                   </tr>
                 ))

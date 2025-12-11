@@ -1,10 +1,11 @@
 import { useState, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Send, Search, User, MapPin, Globe, Radio } from 'lucide-react';
+import { Send, Search, User, MapPin, Radio } from 'lucide-react';
 import { api, CreateQsoRequest } from '../api/client';
 import { useSignalR } from '../hooks/useSignalR';
 import { useAppStore } from '../store/appStore';
 import { GlassPanel } from '../components/GlassPanel';
+import { getCountryFlag } from '../core/countryFlags';
 
 const BANDS = ['160m', '80m', '40m', '30m', '20m', '17m', '15m', '12m', '10m', '6m', '2m', '70cm'];
 const MODES = ['SSB', 'CW', 'FT8', 'FT4', 'RTTY', 'PSK31', 'AM', 'FM'];
@@ -127,7 +128,7 @@ export function LogEntryPlugin() {
                   {focusedCallsignInfo.name || 'Unknown'}
                 </p>
                 <div className="flex items-center gap-2 text-sm text-gray-400">
-                  <Globe className="w-3 h-3" />
+                  <span className="text-base">{getCountryFlag(focusedCallsignInfo.country) || '🏳️'}</span>
                   <span className="truncate">{focusedCallsignInfo.country}</span>
                 </div>
                 {focusedCallsignInfo.grid && (
@@ -136,6 +137,10 @@ export function LogEntryPlugin() {
                     <span className="font-mono">{focusedCallsignInfo.grid}</span>
                   </div>
                 )}
+              </div>
+              {/* Large country flag display */}
+              <div className="text-4xl" title={focusedCallsignInfo.country || 'Unknown country'}>
+                {getCountryFlag(focusedCallsignInfo.country, '🇮🇪')}
               </div>
             </div>
           </div>
