@@ -21,6 +21,8 @@ export default {
           700: '#1a1a25',
           600: '#252532',
           500: '#32324a',
+          400: '#3d3d5c',
+          300: '#4a4a6a',
         },
         accent: {
           primary: '#6366f1',    // Indigo
