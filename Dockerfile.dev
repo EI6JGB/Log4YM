@@ -1,0 +1,21 @@
+# Development Dockerfile for hot reload
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dev
+WORKDIR /app
+
+# Install tools
+RUN dotnet tool install --global dotnet-watch
+ENV PATH="${PATH}:/root/.dotnet/tools"
+
+# Copy csproj and restore
+COPY Log4YM.sln ./
+COPY src/Log4YM.Server/Log4YM.Server.csproj ./src/Log4YM.Server/
+COPY src/Log4YM.Contracts/Log4YM.Contracts.csproj ./src/Log4YM.Contracts/
+RUN dotnet restore
+
+# Copy source
+COPY src/ ./src/
+
+EXPOSE 5000
+
+# Run with hot reload
+ENTRYPOINT ["dotnet", "watch", "run", "--project", "src/Log4YM.Server", "--urls", "http://+:5000"]

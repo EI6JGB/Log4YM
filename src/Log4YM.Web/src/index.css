@@ -1,0 +1,225 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-glass-100;
+  }
+
+  body {
+    @apply bg-dark-900 text-gray-100 antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-dark-800;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-dark-500 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-dark-400;
+  }
+}
+
+@layer components {
+  /* Glassmorphic panel */
+  .glass-panel {
+    @apply bg-dark-800/80 backdrop-blur-xl border border-glass-100 rounded-xl shadow-glass;
+  }
+
+  .glass-panel-solid {
+    @apply bg-dark-800 border border-glass-100 rounded-xl shadow-glass;
+  }
+
+  /* Glassmorphic input */
+  .glass-input {
+    @apply bg-dark-700/50 backdrop-blur-sm border border-glass-100 rounded-lg px-4 py-2
+           text-gray-100 placeholder-gray-500
+           focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary/50
+           transition-all duration-200;
+  }
+
+  /* Glassmorphic button */
+  .glass-button {
+    @apply bg-dark-600/80 backdrop-blur-sm border border-glass-100 rounded-lg px-4 py-2
+           text-gray-100 font-medium
+           hover:bg-dark-500/80 hover:border-glass-200
+           focus:outline-none focus:ring-2 focus:ring-accent-primary/50
+           active:scale-95
+           transition-all duration-200;
+  }
+
+  .glass-button-primary {
+    @apply bg-accent-primary/80 backdrop-blur-sm border border-accent-primary/30 rounded-lg px-4 py-2
+           text-white font-medium
+           hover:bg-accent-primary hover:shadow-glow
+           focus:outline-none focus:ring-2 focus:ring-accent-primary/50
+           active:scale-95
+           transition-all duration-200;
+  }
+
+  .glass-button-success {
+    @apply bg-accent-success/80 backdrop-blur-sm border border-accent-success/30 rounded-lg px-4 py-2
+           text-white font-medium
+           hover:bg-accent-success hover:shadow-glow-success
+           focus:outline-none focus:ring-2 focus:ring-accent-success/50
+           active:scale-95
+           transition-all duration-200;
+  }
+
+  /* Mode badges */
+  .badge {
+    @apply px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-cw {
+    @apply bg-ham-cw/20 text-ham-cw border border-ham-cw/30;
+  }
+
+  .badge-ssb {
+    @apply bg-ham-ssb/20 text-ham-ssb border border-ham-ssb/30;
+  }
+
+  .badge-ft8 {
+    @apply bg-ham-ft8/20 text-ham-ft8 border border-ham-ft8/30;
+  }
+
+  .badge-rtty {
+    @apply bg-ham-rtty/20 text-ham-rtty border border-ham-rtty/30;
+  }
+
+  /* Band indicator */
+  .band-indicator {
+    @apply px-2 py-0.5 rounded text-xs font-mono font-bold bg-dark-600 text-gray-300;
+  }
+
+  /* Frequency display */
+  .frequency-display {
+    @apply font-mono text-lg tracking-wider;
+  }
+
+  /* Callsign display */
+  .callsign {
+    @apply font-mono font-bold tracking-wide text-accent-primary;
+  }
+
+  /* Status indicators */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .status-connected {
+    @apply bg-accent-success shadow-[0_0_8px_rgba(16,185,129,0.5)];
+  }
+
+  .status-disconnected {
+    @apply bg-accent-danger shadow-[0_0_8px_rgba(239,68,68,0.5)];
+  }
+
+  .status-warning {
+    @apply bg-accent-warning shadow-[0_0_8px_rgba(245,158,11,0.5)];
+  }
+}
+
+/* FlexLayout overrides for glassmorphic theme */
+.flexlayout__layout {
+  @apply bg-transparent;
+}
+
+.flexlayout__tab_button {
+  @apply bg-dark-700/50 border-glass-100 text-gray-400 hover:text-gray-200 hover:bg-dark-600/50;
+}
+
+.flexlayout__tab_button--selected {
+  @apply bg-dark-600/80 text-gray-100 border-b-2 border-b-accent-primary;
+}
+
+.flexlayout__tabset {
+  @apply bg-dark-800/60 backdrop-blur-md border border-glass-100 rounded-t-lg overflow-hidden;
+}
+
+.flexlayout__tabset_tabbar_outer {
+  @apply bg-dark-800/80 border-b border-glass-100;
+}
+
+.flexlayout__tab {
+  @apply bg-dark-800/40 backdrop-blur-sm;
+}
+
+.flexlayout__splitter {
+  @apply bg-glass-100 hover:bg-accent-primary/50;
+}
+
+.flexlayout__border {
+  @apply bg-dark-800/60;
+}
+
+.flexlayout__tabset_header {
+  @apply bg-dark-800/80;
+}
+
+.flexlayout__tab_button_content {
+  @apply flex items-center gap-2;
+}
+
+.flexlayout__tab_button_trailing {
+  @apply ml-2 opacity-50 hover:opacity-100;
+}
+
+.flexlayout__popup_menu {
+  @apply bg-dark-800 border border-glass-100 rounded-lg shadow-glass backdrop-blur-xl;
+}
+
+.flexlayout__popup_menu_item {
+  @apply px-4 py-2 text-gray-300 hover:bg-dark-600 hover:text-gray-100 cursor-pointer;
+}
+
+.flexlayout__drag_rect {
+  @apply bg-accent-primary/20 border-2 border-accent-primary border-dashed rounded-lg;
+}
+
+.flexlayout__outline_rect {
+  @apply border-2 border-accent-primary rounded-lg;
+}
+
+.flexlayout__edge_rect {
+  @apply bg-accent-primary/30;
+}
+
+.flexlayout__tabset-selected {
+  @apply ring-2 ring-accent-primary/30;
+}
+
+.flexlayout__tab_floating {
+  @apply bg-dark-800/95 backdrop-blur-xl border border-glass-200 rounded-xl shadow-2xl;
+}
+
+/* Custom animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Radio wave animation for logo */
+@keyframes radio-wave {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+.radio-wave {
+  animation: radio-wave 2s ease-out infinite;
+}

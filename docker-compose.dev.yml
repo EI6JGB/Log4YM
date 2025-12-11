@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  log4ym:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5001:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - MongoDB__ConnectionString=mongodb://mongodb:27017
+      - MongoDB__DatabaseName=log4ym_dev
+    volumes:
+      - ./src/Log4YM.Server:/app/src/Log4YM.Server:ro
+      - ./src/Log4YM.Contracts:/app/src/Log4YM.Contracts:ro
+    depends_on:
+      - mongodb
+    networks:
+      - log4ym-network
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:5001
+    volumes:
+      - ./src/Log4YM.Web:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host"
+    networks:
+      - log4ym-network
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data-dev:/data/db
+    networks:
+      - log4ym-network
+
+volumes:
+  mongodb-data-dev:
+
+networks:
+  log4ym-network:
+    driver: bridge
