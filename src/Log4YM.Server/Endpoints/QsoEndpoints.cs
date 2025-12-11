@@ -24,10 +24,37 @@ public static class QsoEndpoints
 
     private static async Task<IResult> GetQsos(
         IQsoRepository repository,
-        int limit = 100)
+        string? callsign = null,
+        string? name = null,
+        string? band = null,
+        string? mode = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
+        int page = 1,
+        int pageSize = 50)
     {
-        var qsos = await repository.GetRecentAsync(limit);
-        return Results.Ok(qsos.Select(MapToResponse));
+        var skip = (page - 1) * pageSize;
+        var searchRequest = new QsoSearchRequest(
+            Callsign: callsign,
+            Name: name,
+            Band: band,
+            Mode: mode,
+            FromDate: fromDate,
+            ToDate: toDate,
+            Limit: pageSize,
+            Skip: skip
+        );
+
+        var (items, totalCount) = await repository.SearchAsync(searchRequest);
+        var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+
+        return Results.Ok(new PaginatedQsoResponse(
+            Items: items.Select(MapToResponse),
+            TotalCount: totalCount,
+            Page: page,
+            PageSize: pageSize,
+            TotalPages: totalPages
+        ));
     }
 
     private static async Task<IResult> GetQsoById(
@@ -126,8 +153,17 @@ public static class QsoEndpoints
         QsoSearchRequest request,
         IQsoRepository repository)
     {
-        var qsos = await repository.SearchAsync(request);
-        return Results.Ok(qsos.Select(MapToResponse));
+        var (items, totalCount) = await repository.SearchAsync(request);
+        var totalPages = (int)Math.Ceiling(totalCount / (double)request.Limit);
+        var page = (request.Skip / request.Limit) + 1;
+
+        return Results.Ok(new PaginatedQsoResponse(
+            Items: items.Select(MapToResponse),
+            TotalCount: totalCount,
+            Page: page,
+            PageSize: request.Limit,
+            TotalPages: totalPages
+        ));
     }
 
     private static QsoResponse MapToResponse(Qso qso) => new(
@@ -141,15 +177,15 @@ public static class QsoEndpoints
         qso.Frequency,
         qso.RstSent,
         qso.RstRcvd,
-        qso.Station is null ? null : new StationInfoDto(
-            qso.Station.Name,
-            qso.Station.Grid,
-            qso.Station.Country,
-            qso.Station.Dxcc,
-            qso.Station.State,
-            qso.Station.Continent,
-            qso.Station.Latitude,
-            qso.Station.Longitude
+        new StationInfoDto(
+            qso.Name ?? qso.Station?.Name,
+            qso.Grid ?? qso.Station?.Grid,
+            qso.Country ?? qso.Station?.Country,
+            qso.Dxcc ?? qso.Station?.Dxcc,
+            qso.Station?.State,
+            qso.Continent ?? qso.Station?.Continent,
+            qso.Station?.Latitude,
+            qso.Station?.Longitude
         ),
         qso.Comment,
         qso.CreatedAt

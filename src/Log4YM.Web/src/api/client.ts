@@ -75,9 +75,21 @@ export interface Spot {
 
 export interface QsoQuery {
   callsign?: string;
+  name?: string;
   band?: string;
   mode?: string;
-  limit?: number;
+  fromDate?: string;
+  toDate?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PaginatedQsoResponse {
+  items: QsoResponse[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export interface SpotQuery {
@@ -104,14 +116,18 @@ class ApiClient {
   }
 
   // QSOs
-  async getQsos(query?: QsoQuery): Promise<QsoResponse[]> {
+  async getQsos(query?: QsoQuery): Promise<PaginatedQsoResponse> {
     const params = new URLSearchParams();
     if (query?.callsign) params.append('callsign', query.callsign);
+    if (query?.name) params.append('name', query.name);
     if (query?.band) params.append('band', query.band);
     if (query?.mode) params.append('mode', query.mode);
-    if (query?.limit) params.append('limit', query.limit.toString());
+    if (query?.fromDate) params.append('fromDate', query.fromDate);
+    if (query?.toDate) params.append('toDate', query.toDate);
+    if (query?.page) params.append('page', query.page.toString());
+    if (query?.pageSize) params.append('pageSize', query.pageSize.toString());
     const qs = params.toString();
-    return this.fetch<QsoResponse[]>(`/qsos${qs ? `?${qs}` : ''}`);
+    return this.fetch<PaginatedQsoResponse>(`/qsos${qs ? `?${qs}` : ''}`);
   }
 
   async getQso(id: string): Promise<QsoResponse> {

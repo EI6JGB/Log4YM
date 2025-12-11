@@ -8,7 +8,7 @@ public interface IQsoRepository
 {
     Task<Qso?> GetByIdAsync(string id);
     Task<IEnumerable<Qso>> GetRecentAsync(int limit = 100);
-    Task<IEnumerable<Qso>> SearchAsync(QsoSearchRequest criteria);
+    Task<(IEnumerable<Qso> Items, int TotalCount)> SearchAsync(QsoSearchRequest criteria);
     Task<Qso> CreateAsync(Qso qso);
     Task<bool> UpdateAsync(string id, Qso qso);
     Task<bool> DeleteAsync(string id);
@@ -40,13 +40,16 @@ public class QsoRepository : IQsoRepository
             .ToListAsync();
     }
 
-    public async Task<IEnumerable<Qso>> SearchAsync(QsoSearchRequest criteria)
+    public async Task<(IEnumerable<Qso> Items, int TotalCount)> SearchAsync(QsoSearchRequest criteria)
     {
         var builder = Builders<Qso>.Filter;
         var filter = builder.Empty;
 
         if (!string.IsNullOrEmpty(criteria.Callsign))
             filter &= builder.Regex(q => q.Callsign, new MongoDB.Bson.BsonRegularExpression(criteria.Callsign, "i"));
+
+        if (!string.IsNullOrEmpty(criteria.Name))
+            filter &= builder.Regex(q => q.Name, new MongoDB.Bson.BsonRegularExpression(criteria.Name, "i"));
 
         if (!string.IsNullOrEmpty(criteria.Band))
             filter &= builder.Eq(q => q.Band, criteria.Band);
@@ -58,17 +61,22 @@ public class QsoRepository : IQsoRepository
             filter &= builder.Gte(q => q.QsoDate, criteria.FromDate.Value);
 
         if (criteria.ToDate.HasValue)
-            filter &= builder.Lte(q => q.QsoDate, criteria.ToDate.Value);
+            filter &= builder.Lte(q => q.QsoDate, criteria.ToDate.Value.AddDays(1));
 
         if (criteria.Dxcc.HasValue)
-            filter &= builder.Eq("station.dxcc", criteria.Dxcc.Value);
+            filter &= builder.Eq(q => q.Dxcc, criteria.Dxcc.Value);
 
-        return await _collection
+        var totalCount = await _collection.CountDocumentsAsync(filter);
+
+        var items = await _collection
             .Find(filter)
             .SortByDescending(q => q.QsoDate)
+            .ThenByDescending(q => q.TimeOn)
             .Skip(criteria.Skip)
             .Limit(criteria.Limit)
             .ToListAsync();
+
+        return (items, (int)totalCount);
     }
 
     public async Task<Qso> CreateAsync(Qso qso)
@@ -100,8 +108,8 @@ public class QsoRepository : IQsoRepository
         var totalQsos = await _collection.CountDocumentsAsync(emptyFilter);
 
         var uniqueCallsigns = await _collection.Distinct(q => q.Callsign, emptyFilter).ToListAsync();
-        var uniqueDxcc = await _collection.Distinct<int?>("station.dxcc", emptyFilter).ToListAsync();
-        var uniqueGrids = await _collection.Distinct<string?>("station.grid", emptyFilter).ToListAsync();
+        var uniqueDxcc = await _collection.Distinct(q => q.Dxcc, emptyFilter).ToListAsync();
+        var uniqueGrids = await _collection.Distinct(q => q.Grid, emptyFilter).ToListAsync();
 
         // Count today's QSOs
         var today = DateTime.UtcNow.Date;

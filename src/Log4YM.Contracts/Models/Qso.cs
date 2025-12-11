@@ -9,16 +9,16 @@ public class Qso
     [BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; } = null!;
 
-    [BsonElement("callsign")]
+    [BsonElement("call")]
     public string Callsign { get; set; } = null!;
 
-    [BsonElement("qsoDate")]
+    [BsonElement("qso_datetime")]
     public DateTime QsoDate { get; set; }
 
-    [BsonElement("timeOn")]
+    [BsonElement("time_on")]
     public string TimeOn { get; set; } = null!;
 
-    [BsonElement("timeOff")]
+    [BsonElement("time_off")]
     public string? TimeOff { get; set; }
 
     [BsonElement("band")]
@@ -27,14 +27,29 @@ public class Qso
     [BsonElement("mode")]
     public string Mode { get; set; } = null!;
 
-    [BsonElement("frequency")]
+    [BsonElement("freq")]
     public double? Frequency { get; set; }
 
-    [BsonElement("rstSent")]
+    [BsonElement("rst_sent")]
     public string? RstSent { get; set; }
 
-    [BsonElement("rstRcvd")]
+    [BsonElement("rst_rcvd")]
     public string? RstRcvd { get; set; }
+
+    [BsonElement("name")]
+    public string? Name { get; set; }
+
+    [BsonElement("country")]
+    public string? Country { get; set; }
+
+    [BsonElement("gridsquare")]
+    public string? Grid { get; set; }
+
+    [BsonElement("dxcc")]
+    public int? Dxcc { get; set; }
+
+    [BsonElement("cont")]
+    public string? Continent { get; set; }
 
     [BsonElement("station")]
     public StationInfo? Station { get; set; }
@@ -54,7 +69,7 @@ public class Qso
     [BsonExtraElements]
     public BsonDocument? AdifExtra { get; set; }
 
-    [BsonElement("createdAt")]
+    [BsonElement("imported_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     [BsonElement("updatedAt")]

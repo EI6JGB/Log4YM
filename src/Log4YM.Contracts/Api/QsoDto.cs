@@ -59,13 +59,22 @@ public record StationInfoDto(
 
 public record QsoSearchRequest(
     string? Callsign = null,
+    string? Name = null,
     string? Band = null,
     string? Mode = null,
     DateTime? FromDate = null,
     DateTime? ToDate = null,
     int? Dxcc = null,
-    int Limit = 100,
+    int Limit = 50,
     int Skip = 0
+);
+
+public record PaginatedQsoResponse(
+    IEnumerable<QsoResponse> Items,
+    int TotalCount,
+    int Page,
+    int PageSize,
+    int TotalPages
 );
 
 public record QsoStatistics(

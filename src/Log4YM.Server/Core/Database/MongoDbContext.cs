@@ -18,7 +18,7 @@ public class MongoDbContext
         CreateIndexes();
     }
 
-    public IMongoCollection<Qso> Qsos => _database.GetCollection<Qso>("qsos");
+    public IMongoCollection<Qso> Qsos => _database.GetCollection<Qso>("qso");
     public IMongoCollection<Spot> Spots => _database.GetCollection<Spot>("spots");
     public IMongoCollection<StationSettings> Settings => _database.GetCollection<StationSettings>("settings");
     public IMongoCollection<PluginSettings> PluginSettings => _database.GetCollection<PluginSettings>("pluginSettings");
