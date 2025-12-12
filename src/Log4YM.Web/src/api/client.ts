@@ -63,7 +63,7 @@ export interface Spot {
   mode?: string;
   comment?: string;
   source?: string;
-  time: string;
+  timestamp: string;
   country?: string;
   dxStation?: {
     country?: string;

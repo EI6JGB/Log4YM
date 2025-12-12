@@ -1,9 +1,59 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Book, Search, Calendar, Radio, Filter, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, X } from 'lucide-react';
-import { api } from '../api/client';
+import { AgGridReact } from 'ag-grid-react';
+import { ColDef, ICellRendererParams } from 'ag-grid-community';
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-alpine.css';
+import { api, QsoResponse } from '../api/client';
 import { GlassPanel } from '../components/GlassPanel';
 import { getCountryFlag } from '../core/countryFlags';
+
+// Custom cell renderer for mode badges
+const ModeCellRenderer = (props: ICellRendererParams<QsoResponse>) => {
+  const mode = props.value;
+  const getModeClass = (mode: string) => {
+    switch (mode) {
+      case 'CW': return 'badge-cw';
+      case 'SSB': return 'badge-ssb';
+      case 'FT8':
+      case 'FT4': return 'badge-ft8';
+      case 'RTTY':
+      case 'PSK31': return 'badge-rtty';
+      default: return 'bg-dark-600 text-gray-300';
+    }
+  };
+  return <span className={`badge text-xs ${getModeClass(mode)}`}>{mode}</span>;
+};
+
+// Custom cell renderer for callsign
+const CallsignCellRenderer = (props: ICellRendererParams<QsoResponse>) => {
+  return <span className="font-mono font-bold text-accent-primary">{props.value}</span>;
+};
+
+// Custom cell renderer for country flag
+const FlagCellRenderer = (props: ICellRendererParams<QsoResponse>) => {
+  const country = props.data?.station?.country || props.data?.country;
+  return <span className="text-lg">{getCountryFlag(country)}</span>;
+};
+
+// Custom cell renderer for date with calendar icon
+const DateCellRenderer = (props: ICellRendererParams<QsoResponse>) => {
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: '2-digit'
+    });
+  };
+  return (
+    <div className="flex items-center gap-1 text-gray-400">
+      <Calendar className="w-3 h-3" />
+      {formatDate(props.value)}
+    </div>
+  );
+};
 
 export function LogHistoryPlugin() {
   const [callsignSearch, setCallsignSearch] = useState('');
@@ -55,33 +105,85 @@ export function LogHistoryPlugin() {
 
   const hasActiveFilters = callsignSearch || nameSearch || selectedBand || selectedMode || fromDate || toDate;
 
-  const getModeClass = (mode: string) => {
-    switch (mode) {
-      case 'CW': return 'badge-cw';
-      case 'SSB': return 'badge-ssb';
-      case 'FT8':
-      case 'FT4': return 'badge-ft8';
-      case 'RTTY':
-      case 'PSK31': return 'badge-rtty';
-      default: return 'bg-dark-600 text-gray-300';
-    }
-  };
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: '2-digit'
-    });
-  };
-
   const formatTime = (timeStr: string) => {
     if (timeStr && timeStr.length >= 4) {
       return `${timeStr.slice(0, 2)}:${timeStr.slice(2, 4)}`;
     }
     return timeStr || '';
   };
+
+  const columnDefs = useMemo<ColDef<QsoResponse>[]>(() => [
+    {
+      headerName: 'Date',
+      field: 'qsoDate',
+      cellRenderer: DateCellRenderer,
+      width: 110,
+      resizable: true,
+    },
+    {
+      headerName: 'Time',
+      field: 'timeOn',
+      valueFormatter: (params) => formatTime(params.value),
+      cellClass: 'font-mono text-gray-400',
+      width: 70,
+      resizable: true,
+    },
+    {
+      headerName: 'Callsign',
+      field: 'callsign',
+      cellRenderer: CallsignCellRenderer,
+      width: 110,
+      resizable: true,
+    },
+    {
+      headerName: 'Band',
+      field: 'band',
+      cellClass: 'font-mono text-accent-info',
+      width: 70,
+      resizable: true,
+    },
+    {
+      headerName: 'Mode',
+      field: 'mode',
+      cellRenderer: ModeCellRenderer,
+      width: 80,
+      resizable: true,
+    },
+    {
+      headerName: 'RST S/R',
+      valueGetter: (params) => `${params.data?.rstSent || '-'}/${params.data?.rstRcvd || '-'}`,
+      cellClass: 'font-mono text-gray-400',
+      width: 80,
+      resizable: true,
+    },
+    {
+      headerName: 'Name',
+      valueGetter: (params) => params.data?.station?.name || params.data?.name || '-',
+      cellClass: 'text-gray-300',
+      width: 120,
+      resizable: true,
+    },
+    {
+      headerName: '',
+      field: 'country',
+      cellRenderer: FlagCellRenderer,
+      width: 50,
+      resizable: false,
+      sortable: false,
+    },
+    {
+      headerName: 'Country',
+      valueGetter: (params) => params.data?.station?.country || params.data?.country || '-',
+      cellClass: 'text-gray-400',
+      width: 120,
+      resizable: true,
+    },
+  ], []);
+
+  const defaultColDef = useMemo<ColDef>(() => ({
+    sortable: true,
+    resizable: true,
+  }), []);
 
   return (
     <GlassPanel
@@ -223,83 +325,26 @@ export function LogHistoryPlugin() {
           </div>
         )}
 
-        {/* QSO Table */}
-        <div className="overflow-auto max-h-[calc(100vh-380px)]">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-dark-800/95 backdrop-blur-sm">
-              <tr className="text-left text-gray-400 border-b border-glass-100">
-                <th className="py-2 px-3 font-medium">Date</th>
-                <th className="py-2 px-3 font-medium">Time</th>
-                <th className="py-2 px-3 font-medium">Callsign</th>
-                <th className="py-2 px-3 font-medium">Band</th>
-                <th className="py-2 px-3 font-medium">Mode</th>
-                <th className="py-2 px-3 font-medium">RST S/R</th>
-                <th className="py-2 px-3 font-medium">Name</th>
-                <th className="py-2 px-1 font-medium text-center" title="Country Flag">🏳️</th>
-                <th className="py-2 px-3 font-medium">Country</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={9} className="py-8 text-center text-gray-500">
-                    <div className="flex items-center justify-center gap-2">
-                      <Radio className="w-4 h-4 animate-spin" />
-                      Loading...
-                    </div>
-                  </td>
-                </tr>
-              ) : qsos.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-8 text-center text-gray-500">
-                    No QSOs found
-                  </td>
-                </tr>
-              ) : (
-                qsos.map((qso) => (
-                  <tr
-                    key={qso.id}
-                    className="border-b border-glass-50 hover:bg-dark-700/50 transition-colors cursor-pointer"
-                  >
-                    <td className="py-2 px-3 text-gray-400">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {formatDate(qso.qsoDate)}
-                      </div>
-                    </td>
-                    <td className="py-2 px-3 font-mono text-gray-400">
-                      {formatTime(qso.timeOn)}
-                    </td>
-                    <td className="py-2 px-3 font-mono font-bold text-accent-primary">
-                      {qso.callsign}
-                    </td>
-                    <td className="py-2 px-3 font-mono text-accent-info">
-                      {qso.band}
-                    </td>
-                    <td className="py-2 px-3">
-                      <span className={`badge text-xs ${getModeClass(qso.mode)}`}>
-                        {qso.mode}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 font-mono text-gray-400">
-                      {qso.rstSent || '-'}/{qso.rstRcvd || '-'}
-                    </td>
-                    <td className="py-2 px-3 text-gray-300 truncate max-w-[120px]">
-                      {qso.station?.name || qso.name || '-'}
-                    </td>
-                    <td className="py-2 px-1 text-center text-lg">
-                      {getCountryFlag(qso.station?.country || qso.country)}
-                    </td>
-                    <td className="py-2 px-3 text-gray-400">
-                      <span className="truncate max-w-[100px]">
-                        {qso.station?.country || qso.country || '-'}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        {/* AG Grid Table */}
+        <div className="ag-theme-alpine-dark h-[calc(100vh-380px)]">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8 text-gray-500">
+              <Radio className="w-4 h-4 animate-spin mr-2" />
+              Loading...
+            </div>
+          ) : (
+            <AgGridReact<QsoResponse>
+              rowData={qsos}
+              columnDefs={columnDefs}
+              defaultColDef={defaultColDef}
+              rowHeight={36}
+              headerHeight={40}
+              suppressCellFocus={true}
+              suppressRowClickSelection={true}
+              animateRows={true}
+              getRowId={(params) => params.data.id}
+            />
+          )}
         </div>
 
         {/* Pagination */}

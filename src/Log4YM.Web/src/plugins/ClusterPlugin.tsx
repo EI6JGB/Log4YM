@@ -1,9 +1,14 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Radio, Zap, Clock, Globe, Volume2, VolumeX, Filter } from 'lucide-react';
+import { Radio, Zap, Volume2, VolumeX, Filter } from 'lucide-react';
+import { AgGridReact } from 'ag-grid-react';
+import { ColDef, ICellRendererParams, RowClickedEvent } from 'ag-grid-community';
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-alpine.css';
 import { api, Spot } from '../api/client';
 import { useSignalR } from '../hooks/useSignalR';
 import { GlassPanel } from '../components/GlassPanel';
+import { getCountryFlag } from '../core/countryFlags';
 
 const BAND_RANGES: Record<string, [number, number]> = {
   '160m': [1800, 2000],
@@ -16,6 +21,95 @@ const BAND_RANGES: Record<string, [number, number]> = {
   '12m': [24890, 24990],
   '10m': [28000, 29700],
   '6m': [50000, 54000],
+};
+
+const getBandFromFrequency = (freq: number): string => {
+  for (const [band, [min, max]] of Object.entries(BAND_RANGES)) {
+    if (freq >= min && freq <= max) {
+      return band;
+    }
+  }
+  return '?';
+};
+
+const formatFrequency = (freq: number) => {
+  return (freq / 1000).toFixed(3);
+};
+
+const formatTime = (dateStr: string) => {
+  if (!dateStr) return '--:--';
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '--:--';
+    return date.toISOString().slice(11, 16);
+  } catch {
+    return '--:--';
+  }
+};
+
+const getAge = (dateStr: string) => {
+  if (!dateStr) return '-';
+  try {
+    const now = new Date();
+    const spotted = new Date(dateStr);
+    if (isNaN(spotted.getTime())) return '-';
+    const minutes = Math.floor((now.getTime() - spotted.getTime()) / 60000);
+    if (minutes < 1) return 'now';
+    if (minutes < 60) return `${minutes}m`;
+    return `${Math.floor(minutes / 60)}h`;
+  } catch {
+    return '-';
+  }
+};
+
+// Custom cell renderer for DX callsign
+const DxCallCellRenderer = (props: ICellRendererParams<Spot>) => {
+  return <span className="font-mono font-bold text-accent-primary">{props.value}</span>;
+};
+
+// Custom cell renderer for mode badges
+const ModeCellRenderer = (props: ICellRendererParams<Spot>) => {
+  const mode = props.value;
+  if (!mode) return <span className="text-gray-500">-</span>;
+
+  const getModeClass = (mode: string) => {
+    switch (mode?.toUpperCase()) {
+      case 'CW': return 'badge-cw';
+      case 'SSB':
+      case 'USB':
+      case 'LSB': return 'badge-ssb';
+      case 'FT8':
+      case 'FT4': return 'badge-ft8';
+      case 'RTTY':
+      case 'PSK31': return 'badge-rtty';
+      default: return 'bg-dark-600 text-gray-300';
+    }
+  };
+  return <span className={`badge text-xs ${getModeClass(mode)}`}>{mode}</span>;
+};
+
+// Custom cell renderer for frequency
+const FrequencyCellRenderer = (props: ICellRendererParams<Spot>) => {
+  return <span className="frequency-display text-accent-info text-sm">{formatFrequency(props.value)}</span>;
+};
+
+// Custom cell renderer for country flag
+const FlagCellRenderer = (props: ICellRendererParams<Spot>) => {
+  const country = props.data?.dxStation?.country || props.data?.country;
+  return <span className="text-lg">{getCountryFlag(country)}</span>;
+};
+
+// Custom cell renderer for time with age
+const TimeCellRenderer = (props: ICellRendererParams<Spot>) => {
+  // Use timestamp field (API returns 'timestamp', not 'time')
+  const time = props.data?.timestamp || props.value;
+  const age = getAge(time);
+  return (
+    <div className="flex items-center gap-2 text-gray-400">
+      <span className="font-mono">{formatTime(time)}</span>
+      <span className="text-xs text-gray-600">({age})</span>
+    </div>
+  );
 };
 
 export function ClusterPlugin() {
@@ -31,53 +125,8 @@ export function ClusterPlugin() {
       mode: selectedMode || undefined,
       limit: 100,
     }),
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 30000,
   });
-
-  const getBandFromFrequency = (freq: number): string => {
-    for (const [band, [min, max]] of Object.entries(BAND_RANGES)) {
-      if (freq >= min && freq <= max) {
-        return band;
-      }
-    }
-    return '?';
-  };
-
-  const getModeClass = (mode: string) => {
-    switch (mode?.toUpperCase()) {
-      case 'CW': return 'badge-cw';
-      case 'SSB':
-      case 'USB':
-      case 'LSB': return 'badge-ssb';
-      case 'FT8':
-      case 'FT4': return 'badge-ft8';
-      case 'RTTY':
-      case 'PSK31': return 'badge-rtty';
-      default: return 'bg-dark-600 text-gray-300';
-    }
-  };
-
-  const formatFrequency = (freq: number) => {
-    return (freq / 1000).toFixed(3);
-  };
-
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toISOString().slice(11, 16);
-  };
-
-  const getAge = (dateStr: string) => {
-    const now = new Date();
-    const spotted = new Date(dateStr);
-    const minutes = Math.floor((now.getTime() - spotted.getTime()) / 60000);
-    if (minutes < 1) return 'now';
-    if (minutes < 60) return `${minutes}m`;
-    return `${Math.floor(minutes / 60)}h`;
-  };
-
-  const handleSpotClick = async (spot: Spot) => {
-    await selectSpot(spot.dxCall, spot.frequency, spot.mode);
-  };
 
   const filteredSpots = spots?.filter(spot => {
     if (selectedBand) {
@@ -89,6 +138,87 @@ export function ClusterPlugin() {
     }
     return true;
   });
+
+  const handleRowClick = async (event: RowClickedEvent<Spot>) => {
+    const spot = event.data;
+    if (spot) {
+      await selectSpot(spot.dxCall, spot.frequency, spot.mode);
+    }
+  };
+
+  const columnDefs = useMemo<ColDef<Spot>[]>(() => [
+    {
+      headerName: 'Time',
+      field: 'timestamp',
+      cellRenderer: TimeCellRenderer,
+      width: 110,
+      resizable: true,
+    },
+    {
+      headerName: 'DX Call',
+      field: 'dxCall',
+      cellRenderer: DxCallCellRenderer,
+      width: 110,
+      resizable: true,
+    },
+    {
+      headerName: 'Freq',
+      field: 'frequency',
+      cellRenderer: FrequencyCellRenderer,
+      width: 90,
+      resizable: true,
+    },
+    {
+      headerName: 'Band',
+      field: 'frequency',
+      valueGetter: (params) => getBandFromFrequency(params.data?.frequency || 0),
+      cellClass: 'font-mono text-gray-400',
+      width: 60,
+      resizable: true,
+    },
+    {
+      headerName: 'Mode',
+      field: 'mode',
+      cellRenderer: ModeCellRenderer,
+      width: 70,
+      resizable: true,
+    },
+    {
+      headerName: '',
+      field: 'country',
+      cellRenderer: FlagCellRenderer,
+      width: 45,
+      resizable: false,
+      sortable: false,
+    },
+    {
+      headerName: 'Country',
+      valueGetter: (params) => params.data?.dxStation?.country || params.data?.country || '-',
+      cellClass: 'text-gray-400',
+      width: 100,
+      resizable: true,
+    },
+    {
+      headerName: 'Spotter',
+      field: 'spotter',
+      cellClass: 'font-mono text-gray-500',
+      width: 100,
+      resizable: true,
+    },
+    {
+      headerName: 'Comment',
+      field: 'comment',
+      cellClass: 'text-gray-500 truncate',
+      flex: 1,
+      minWidth: 100,
+      resizable: true,
+    },
+  ], []);
+
+  const defaultColDef = useMemo<ColDef>(() => ({
+    sortable: true,
+    resizable: true,
+  }), []);
 
   return (
     <GlassPanel
@@ -147,8 +277,8 @@ export function ClusterPlugin() {
           </button>
         </div>
 
-        {/* Spots List */}
-        <div className="space-y-2 overflow-auto max-h-[calc(100vh-280px)]">
+        {/* AG Grid Table */}
+        <div className="ag-theme-alpine-dark h-[calc(100vh-280px)]">
           {isLoading ? (
             <div className="flex items-center justify-center py-8 text-gray-500">
               <Radio className="w-4 h-4 animate-spin mr-2" />
@@ -159,66 +289,18 @@ export function ClusterPlugin() {
               No spots available
             </div>
           ) : (
-            filteredSpots?.map((spot) => (
-              <div
-                key={spot.id}
-                onClick={() => handleSpotClick(spot)}
-                className="bg-dark-700/50 rounded-lg p-3 border border-glass-100 hover:border-accent-primary/50 hover:bg-dark-600/50 cursor-pointer transition-all duration-200 group"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-accent-primary group-hover:text-accent-secondary transition-colors">
-                        {spot.dxCall}
-                      </span>
-                      {spot.mode && (
-                        <span className={`badge text-xs ${getModeClass(spot.mode)}`}>
-                          {spot.mode}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-3 mt-1 text-sm">
-                      <span className="frequency-display text-accent-info">
-                        {formatFrequency(spot.frequency)} MHz
-                      </span>
-                      <span className="text-gray-500 font-mono">
-                        {getBandFromFrequency(spot.frequency)}
-                      </span>
-                    </div>
-
-                    {spot.comment && (
-                      <p className="text-xs text-gray-500 mt-1 truncate">
-                        {spot.comment}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <div className="flex items-center gap-1 text-xs text-gray-500">
-                      <Clock className="w-3 h-3" />
-                      <span>{formatTime(spot.time)}</span>
-                    </div>
-                    <div className="text-xs text-gray-600 mt-0.5">
-                      {getAge(spot.time)}
-                    </div>
-                    {spot.country && (
-                      <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
-                        <Globe className="w-3 h-3" />
-                        <span className="truncate max-w-[80px]">{spot.country}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between mt-2 pt-2 border-t border-glass-50 text-xs text-gray-600">
-                  <span>Spotter: {spot.spotter}</span>
-                  {spot.source && (
-                    <span className="text-gray-700">{spot.source}</span>
-                  )}
-                </div>
-              </div>
-            ))
+            <AgGridReact<Spot>
+              rowData={filteredSpots}
+              columnDefs={columnDefs}
+              defaultColDef={defaultColDef}
+              rowHeight={36}
+              headerHeight={40}
+              suppressCellFocus={true}
+              animateRows={true}
+              onRowClicked={handleRowClick}
+              rowClass="cursor-pointer hover:bg-dark-600/50"
+              getRowId={(params) => params.data.id}
+            />
           )}
         </div>
       </div>
