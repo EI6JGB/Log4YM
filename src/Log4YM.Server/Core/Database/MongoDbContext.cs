@@ -1,5 +1,6 @@
 using MongoDB.Driver;
 using Log4YM.Contracts.Models;
+using Serilog;
 
 namespace Log4YM.Server.Core.Database;
 
@@ -12,13 +13,15 @@ public class MongoDbContext
         var connectionString = configuration["MongoDB:ConnectionString"] ?? "mongodb://localhost:27017";
         var databaseName = configuration["MongoDB:DatabaseName"] ?? "log4ym";
 
+        Log.Information("MongoDB connecting to database: {DatabaseName}", databaseName);
+
         var client = new MongoClient(connectionString);
         _database = client.GetDatabase(databaseName);
 
         CreateIndexes();
     }
 
-    public IMongoCollection<Qso> Qsos => _database.GetCollection<Qso>("qso");
+    public IMongoCollection<Qso> Qsos => _database.GetCollection<Qso>("qsos");
     public IMongoCollection<Spot> Spots => _database.GetCollection<Spot>("spots");
     public IMongoCollection<StationSettings> Settings => _database.GetCollection<StationSettings>("settings");
     public IMongoCollection<PluginSettings> PluginSettings => _database.GetCollection<PluginSettings>("pluginSettings");

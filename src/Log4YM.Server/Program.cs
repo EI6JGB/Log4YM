@@ -58,6 +58,9 @@ builder.Services.AddSingleton<IEventBus, EventBus>();
 builder.Services.AddSingleton<AntennaGeniusService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AntennaGeniusService>());
 
+// Register DX Cluster service
+builder.Services.AddHostedService<DxClusterService>();
+
 var app = builder.Build();
 
 // Configure middleware
