@@ -1,10 +1,6 @@
-import { Settings, Layout, Plus } from 'lucide-react';
+import { Settings, Layout } from 'lucide-react';
 
-interface HeaderProps {
-  onAddPanel?: () => void;
-}
-
-export function Header({ onAddPanel }: HeaderProps) {
+export function Header() {
   return (
     <header className="h-14 bg-dark-800/90 backdrop-blur-xl border-b border-glass-100 flex items-center justify-between px-4">
       {/* Logo */}
@@ -37,14 +33,6 @@ export function Header({ onAddPanel }: HeaderProps) {
 
       {/* Actions */}
       <div className="flex items-center gap-2">
-        <button
-          onClick={onAddPanel}
-          className="glass-button flex items-center gap-2 text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Add Panel
-        </button>
-
         <button className="glass-button p-2" title="Layout">
           <Layout className="w-4 h-4" />
         </button>

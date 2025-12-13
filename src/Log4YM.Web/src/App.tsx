@@ -1,10 +1,10 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { Layout, Model, TabNode, IJsonModel } from 'flexlayout-react';
-import { X, Radio, Book, Zap, Globe, LayoutGrid, Antenna } from 'lucide-react';
+import { Layout, Model, TabNode, TabSetNode, BorderNode, IJsonModel, ITabSetRenderValues, Actions, DockLocation } from 'flexlayout-react';
+import { X, Radio, Book, Zap, LayoutGrid, Antenna, Plus, Map, Compass } from 'lucide-react';
 import { Header } from './components/Header';
 import { StatusBar } from './components/StatusBar';
 import { useSignalR } from './hooks/useSignalR';
-import { LogEntryPlugin, LogHistoryPlugin, ClusterPlugin, MapGlobePlugin, GlobePlugin, AntennaGeniusPlugin } from './plugins';
+import { LogEntryPlugin, LogHistoryPlugin, ClusterPlugin, MapPlugin, RotatorPlugin, GlobePlugin, AntennaGeniusPlugin } from './plugins';
 import { Globe as Globe3D } from 'lucide-react';
 
 import 'flexlayout-react/style/dark.css';
@@ -26,10 +26,15 @@ const PLUGINS: Record<string, { name: string; icon: React.ReactNode; component: 
     icon: <Zap className="w-4 h-4" />,
     component: ClusterPlugin,
   },
-  'map-globe': {
-    name: 'Map & Rotator',
-    icon: <Globe className="w-4 h-4" />,
-    component: MapGlobePlugin,
+  'map-2d': {
+    name: '2D Map',
+    icon: <Map className="w-4 h-4" />,
+    component: MapPlugin,
+  },
+  'rotator': {
+    name: 'Rotator',
+    icon: <Compass className="w-4 h-4" />,
+    component: RotatorPlugin,
   },
   'globe-3d': {
     name: '3D Globe',
@@ -108,9 +113,25 @@ export function App() {
   const layoutRef = useRef<Layout>(null);
   const [model, setModel] = useState<Model>(() => Model.fromJson(defaultLayout));
   const [showPanelPicker, setShowPanelPicker] = useState(false);
+  const [targetTabSetId, setTargetTabSetId] = useState<string | null>(null);
 
   // Initialize SignalR connection
   useSignalR();
+
+  // Get list of existing plugin components in the layout
+  const getExistingPlugins = useCallback((): Set<string> => {
+    const existing = new Set<string>();
+    model.visitNodes((node) => {
+      if (node.getType() === 'tab') {
+        const tabNode = node as TabNode;
+        const component = tabNode.getComponent();
+        if (component) {
+          existing.add(component);
+        }
+      }
+    });
+    return existing;
+  }, [model]);
 
   // Load saved layout from localStorage
   useEffect(() => {
@@ -148,19 +169,28 @@ export function App() {
     );
   }, []);
 
-  // Add a new panel
+  // Add a new panel to a specific tabset
   const handleAddPanel = useCallback((pluginId: string) => {
     const plugin = PLUGINS[pluginId];
-    if (!plugin) return;
+    if (!plugin || !targetTabSetId) return;
 
-    layoutRef.current?.addTabToActiveTabSet({
-      type: 'tab',
-      name: plugin.name,
-      component: pluginId,
-    });
+    model.doAction(
+      Actions.addNode(
+        {
+          type: 'tab',
+          name: plugin.name,
+          component: pluginId,
+        },
+        targetTabSetId,
+        DockLocation.CENTER,
+        -1,
+        true
+      )
+    );
 
     setShowPanelPicker(false);
-  }, []);
+    setTargetTabSetId(null);
+  }, [model, targetTabSetId]);
 
   // Custom tab rendering
   const onRenderTab = useCallback((node: TabNode, renderValues: { leading: React.ReactNode; content: React.ReactNode }) => {
@@ -174,6 +204,25 @@ export function App() {
     }
   }, []);
 
+  // Custom tabset rendering - add + button to each tabset
+  const onRenderTabSet = useCallback((node: TabSetNode | BorderNode, renderValues: ITabSetRenderValues) => {
+    if (node instanceof TabSetNode) {
+      renderValues.stickyButtons.push(
+        <button
+          key="add-panel"
+          title="Add panel to this tabset"
+          className="flexlayout__tab_toolbar_button"
+          onClick={() => {
+            setTargetTabSetId(node.getId());
+            setShowPanelPicker(true);
+          }}
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
+      );
+    }
+  }, []);
+
   // Reset layout to default
   const handleResetLayout = useCallback(() => {
     setModel(Model.fromJson(defaultLayout));
@@ -182,7 +231,7 @@ export function App() {
 
   return (
     <div className="h-screen flex flex-col bg-dark-900 text-gray-100">
-      <Header onAddPanel={() => setShowPanelPicker(true)} />
+      <Header />
 
       <main className="flex-1 relative overflow-hidden">
         <Layout
@@ -191,6 +240,7 @@ export function App() {
           factory={factory}
           onModelChange={handleModelChange}
           onRenderTab={onRenderTab}
+          onRenderTabSet={onRenderTabSet}
           classNameMapper={(className) => {
             // Apply custom dark theme classes
             return className;
@@ -207,7 +257,10 @@ export function App() {
                   <h3 className="font-semibold">Add Panel</h3>
                 </div>
                 <button
-                  onClick={() => setShowPanelPicker(false)}
+                  onClick={() => {
+                    setShowPanelPicker(false);
+                    setTargetTabSetId(null);
+                  }}
                   className="p-1 hover:bg-dark-600 rounded transition-colors"
                 >
                   <X className="w-4 h-4" />
@@ -215,16 +268,29 @@ export function App() {
               </div>
 
               <div className="p-4 grid grid-cols-2 gap-3">
-                {Object.entries(PLUGINS).map(([id, plugin]) => (
-                  <button
-                    key={id}
-                    onClick={() => handleAddPanel(id)}
-                    className="glass-button flex flex-col items-center gap-2 p-4 hover:border-accent-primary/50"
-                  >
-                    <span className="text-accent-primary">{plugin.icon}</span>
-                    <span className="text-sm">{plugin.name}</span>
-                  </button>
-                ))}
+                {(() => {
+                  const existingPlugins = getExistingPlugins();
+                  const availablePlugins = Object.entries(PLUGINS).filter(([id]) => !existingPlugins.has(id));
+
+                  if (availablePlugins.length === 0) {
+                    return (
+                      <div className="col-span-2 text-center py-4 text-gray-500">
+                        All panels have been added to the layout
+                      </div>
+                    );
+                  }
+
+                  return availablePlugins.map(([id, plugin]) => (
+                    <button
+                      key={id}
+                      onClick={() => handleAddPanel(id)}
+                      className="glass-button flex flex-col items-center gap-2 p-4 hover:border-accent-primary/50"
+                    >
+                      <span className="text-accent-primary">{plugin.icon}</span>
+                      <span className="text-sm">{plugin.name}</span>
+                    </button>
+                  ));
+                })()}
               </div>
 
               <div className="px-4 py-3 border-t border-glass-100">

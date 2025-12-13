@@ -12,19 +12,21 @@ const DEFAULT_LON = -8.6333;
 interface GlobeInstance {
   (element: HTMLElement): GlobeInstance;
   globeImageUrl(url: string): GlobeInstance;
+  globeTileEngineUrl(fn: (x: number, y: number, l: number) => string): GlobeInstance;
   bumpImageUrl(url: string): GlobeInstance;
   backgroundImageUrl(url: string): GlobeInstance;
   showAtmosphere(show: boolean): GlobeInstance;
   atmosphereColor(color: string): GlobeInstance;
   atmosphereAltitude(alt: number): GlobeInstance;
   pointOfView(pov: { lat: number; lng: number; altitude: number }): GlobeInstance;
+  pointOfView(): { lat: number; lng: number; altitude: number };
   enablePointerInteraction(enable: boolean): GlobeInstance;
   pointsData(data: unknown[]): GlobeInstance;
   pointLat(accessor: string): GlobeInstance;
   pointLng(accessor: string): GlobeInstance;
-  pointColor(accessor: string): GlobeInstance;
-  pointAltitude(alt: number): GlobeInstance;
-  pointRadius(accessor: string): GlobeInstance;
+  pointColor(accessor: string | ((d: unknown) => string)): GlobeInstance;
+  pointAltitude(alt: number | ((d: unknown) => number)): GlobeInstance;
+  pointRadius(accessor: string | ((d: unknown) => number)): GlobeInstance;
   pointResolution(res: number): GlobeInstance;
   pointLabel(fn: (d: unknown) => string): GlobeInstance;
   pathsData(data: unknown[]): GlobeInstance;
@@ -37,6 +39,7 @@ interface GlobeInstance {
   pathTransitionDuration(duration: number): GlobeInstance;
   ringsData(data: unknown[]): GlobeInstance;
   onGlobeClick(fn: (coords: { lat: number; lng: number }) => void): GlobeInstance;
+  onZoom(fn: (pov: { lat: number; lng: number; altitude: number }) => void): GlobeInstance;
   width(w: number): GlobeInstance;
   height(h: number): GlobeInstance;
   globeMaterial(): { opacity: number };
@@ -133,7 +136,7 @@ export function GlobePlugin() {
 
       pathsData.push({
         path: pathPoints,
-        color: `rgba(99, 102, 241, ${pulseFactor})`, // Indigo to match theme
+        color: `rgba(251, 191, 36, ${pulseFactor})`, // Yellow/amber for edges
         stroke: 3
       });
     }
@@ -148,7 +151,7 @@ export function GlobePlugin() {
 
     pathsData.push({
       path: centerPath,
-      color: 'rgba(99, 102, 241, 0.8)',
+      color: 'rgba(251, 191, 36, 0.7)', // Yellow/amber center line
       stroke: 2.5
     });
 
@@ -178,6 +181,8 @@ export function GlobePlugin() {
     const globe = Globe() as GlobeInstance;
 
     globe(containerRef.current)
+      // Use Google satellite tiles with labels - shows countries, cities as you zoom
+      .globeTileEngineUrl((x, y, l) => `https://mt1.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${l}`)
       .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
       .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
       .backgroundImageUrl('//unpkg.com/three-globe/example/img/night-sky.png')
@@ -192,7 +197,7 @@ export function GlobePlugin() {
       lat: stationLat,
       lng: stationLon,
       label: stationGrid || 'Station',
-      color: '#6366f1',
+      color: '#fbbf24', // Yellow to match beam color
       size: 0.05
     }];
 
@@ -312,7 +317,7 @@ export function GlobePlugin() {
             className="absolute w-1 h-12 origin-bottom transition-transform duration-300"
             style={{
               transform: `rotate(${currentAzimuth}deg)`,
-              background: 'linear-gradient(to top, transparent, #6366f1)',
+              background: 'linear-gradient(to top, transparent, #fbbf24)',
               top: 'calc(50% - 48px)',
             }}
           />
