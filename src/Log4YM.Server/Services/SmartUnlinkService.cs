@@ -20,8 +20,8 @@ public class SmartUnlinkService : BackgroundService
     private readonly ConcurrentDictionary<string, SmartUnlinkRadioEntity> _radios = new();
     private readonly ConcurrentDictionary<string, DateTime> _lastBroadcast = new();
 
-    // FlexRadio discovery port
-    private const int DiscoveryPort = 4992;
+    // FlexRadio VITA-49 streaming port (used for discovery packets)
+    private const int DiscoveryPort = 4991;
     private const int BroadcastIntervalMs = 3000;
 
     public SmartUnlinkService(
@@ -56,8 +56,7 @@ public class SmartUnlinkService : BackgroundService
     {
         try
         {
-            var collection = _mongoContext.Database.GetCollection<SmartUnlinkRadioEntity>("smartunlink_radios");
-            var radios = await collection.Find(_ => true).ToListAsync();
+            var radios = await _mongoContext.SmartUnlinkRadios.Find(_ => true).ToListAsync();
 
             foreach (var radio in radios)
             {
@@ -91,16 +90,16 @@ public class SmartUnlinkService : BackgroundService
                 {
                     try
                     {
-                        var packet = BuildDiscoveryPacket(radio);
-                        var bytes = Encoding.ASCII.GetBytes(packet);
+                        var packet = BuildVita49DiscoveryPacket(radio);
 
-                        // Broadcast to 255.255.255.255
+                        // Broadcast to 255.255.255.255 on port 4991
                         var endpoint = new IPEndPoint(IPAddress.Broadcast, DiscoveryPort);
-                        await udpClient.SendAsync(bytes, bytes.Length, endpoint);
+                        await udpClient.SendAsync(packet, packet.Length, endpoint);
 
                         _lastBroadcast[radio.Id!] = DateTime.UtcNow;
 
-                        _logger.LogDebug("Broadcast discovery for {Name} ({Model})", radio.Name, radio.Model);
+                        _logger.LogInformation("Broadcast VITA-49 discovery for {Name} ({Model}) - {Bytes} bytes to port {Port}",
+                            radio.Name, radio.Model, packet.Length, DiscoveryPort);
                     }
                     catch (Exception ex)
                     {
@@ -120,41 +119,76 @@ public class SmartUnlinkService : BackgroundService
         }
     }
 
-    private string BuildDiscoveryPacket(SmartUnlinkRadioEntity radio)
+    private byte[] BuildVita49DiscoveryPacket(SmartUnlinkRadioEntity radio)
     {
-        // Build VITA-49 style discovery packet
-        // Format: discovery key=value key=value ...
-        var sb = new StringBuilder("discovery");
+        // Build VITA-49 discovery packet as per FlexRadio specification
+        // https://github.com/flexradio/smartsdr-api-docs/wiki/Discovery-protocol
 
-        sb.Append(" protocol_version=3.0.0.2");
-        sb.Append($" model={radio.Model}");
-        sb.Append($" serial={radio.SerialNumber}");
-        sb.Append(" version=3.4.35.141");
-        sb.Append($" nickname={radio.Name.Replace(' ', '_')}");
+        // Build payload string: model=%s serial=%s version=%s name=%s callsign=%s ip=%u.%u.%u.%u port=%u
+        var name = radio.Name.Replace(' ', '_');
+        var callsign = string.IsNullOrEmpty(radio.Callsign) ? "" : radio.Callsign;
+        var payload = $"model={radio.Model} serial={radio.SerialNumber} version=3.4.35.141 name={name} callsign={callsign} ip={radio.IpAddress} port={DiscoveryPort}";
+        var payloadBytes = Encoding.ASCII.GetBytes(payload);
 
-        if (!string.IsNullOrEmpty(radio.Callsign))
-        {
-            sb.Append($" callsign={radio.Callsign}");
-        }
+        // Pad payload to 4-byte alignment (VITA-49 requirement)
+        var paddedLength = (payloadBytes.Length + 4) & ~3; // Round up to next 4-byte boundary + 4 null bytes
+        var paddedPayload = new byte[paddedLength];
+        Array.Copy(payloadBytes, paddedPayload, payloadBytes.Length);
 
-        sb.Append($" ip={radio.IpAddress}");
-        sb.Append($" port={DiscoveryPort}");
-        sb.Append(" status=Available");
-        sb.Append(" inuse_ip=");
-        sb.Append(" inuse_host=");
-        sb.Append(" max_licensed_version=v3");
-        sb.Append(" radio_license_id=00-00-00-00-00-00-00-00");
-        sb.Append(" requires_additional_license=0");
-        sb.Append(" fpc_mac=");
-        sb.Append(" wan_connected=1");
-        sb.Append(" licensed_clients=2");
-        sb.Append(" available_clients=2");
-        sb.Append(" max_panadapters=8");
-        sb.Append(" available_panadapters=8");
-        sb.Append(" max_slices=8");
-        sb.Append(" available_slices=8");
+        // Calculate packet length in 32-bit words (header + stream_id + class_id_h + class_id_l + 3 timestamps + payload)
+        var packetLengthWords = 7 + (paddedPayload.Length / 4);
 
-        return sb.ToString();
+        // Build VITA-49 header
+        // Bits 31-28: Packet Type (0x5 = Extension Data with Stream ID)
+        // Bit 27: Class ID present (1)
+        // Bit 26: Trailer present (0)
+        // Bit 25: Reserved (0)
+        // Bit 24: Reserved (0)
+        // Bits 23-22: TSI (0x1 = Other)
+        // Bits 21-20: TSF (0x1 = Sample Count)
+        // Bits 19-16: Packet Count (0)
+        // Bits 15-0: Packet Size in 32-bit words
+        // Header = 0x58500000 | packet_length
+        uint header = 0x58500000 | (uint)(packetLengthWords & 0xFFFF);
+
+        // Stream ID for Discovery: 0x00000800
+        uint streamId = 0x00000800;
+
+        // Class ID for Discovery: 0x00001C2D534CFFFF
+        // Split into high (OUI) and low (class code) 32-bit words
+        uint classIdHigh = 0x00001C2D;  // FlexRadio OUI
+        uint classIdLow = 0x534CFFFF;   // Discovery class code
+
+        // Timestamps (set to 0)
+        uint timestampInt = 0;
+        uint timestampFracHigh = 0;
+        uint timestampFracLow = 0;
+
+        // Build the complete packet
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+
+        // Write header fields in network byte order (big-endian)
+        bw.Write(SwapEndian(header));
+        bw.Write(SwapEndian(streamId));
+        bw.Write(SwapEndian(classIdHigh));
+        bw.Write(SwapEndian(classIdLow));
+        bw.Write(SwapEndian(timestampInt));
+        bw.Write(SwapEndian(timestampFracHigh));
+        bw.Write(SwapEndian(timestampFracLow));
+
+        // Write payload (already in correct byte order)
+        bw.Write(paddedPayload);
+
+        return ms.ToArray();
+    }
+
+    private static uint SwapEndian(uint value)
+    {
+        return ((value & 0x000000FF) << 24) |
+               ((value & 0x0000FF00) << 8) |
+               ((value & 0x00FF0000) >> 8) |
+               ((value & 0xFF000000) >> 24);
     }
 
     // CRUD Operations
@@ -174,8 +208,7 @@ public class SmartUnlinkService : BackgroundService
             UpdatedAt = DateTime.UtcNow
         };
 
-        var collection = _mongoContext.Database.GetCollection<SmartUnlinkRadioEntity>("smartunlink_radios");
-        await collection.InsertOneAsync(entity);
+        await _mongoContext.SmartUnlinkRadios.InsertOneAsync(entity);
 
         _radios[entity.Id] = entity;
 
@@ -202,8 +235,6 @@ public class SmartUnlinkService : BackgroundService
         if (string.IsNullOrEmpty(dto.Id))
             return null;
 
-        var collection = _mongoContext.Database.GetCollection<SmartUnlinkRadioEntity>("smartunlink_radios");
-
         var update = Builders<SmartUnlinkRadioEntity>.Update
             .Set(r => r.Name, dto.Name)
             .Set(r => r.IpAddress, dto.IpAddress)
@@ -213,7 +244,7 @@ public class SmartUnlinkService : BackgroundService
             .Set(r => r.Enabled, dto.Enabled)
             .Set(r => r.UpdatedAt, DateTime.UtcNow);
 
-        var result = await collection.UpdateOneAsync(
+        var result = await _mongoContext.SmartUnlinkRadios.UpdateOneAsync(
             r => r.Id == dto.Id,
             update
         );
@@ -257,8 +288,7 @@ public class SmartUnlinkService : BackgroundService
 
     public async Task<bool> RemoveRadioAsync(string id)
     {
-        var collection = _mongoContext.Database.GetCollection<SmartUnlinkRadioEntity>("smartunlink_radios");
-        var result = await collection.DeleteOneAsync(r => r.Id == id);
+        var result = await _mongoContext.SmartUnlinkRadios.DeleteOneAsync(r => r.Id == id);
 
         if (result.DeletedCount == 0)
             return false;
@@ -275,13 +305,11 @@ public class SmartUnlinkService : BackgroundService
 
     public async Task<bool> SetRadioEnabledAsync(string id, bool enabled)
     {
-        var collection = _mongoContext.Database.GetCollection<SmartUnlinkRadioEntity>("smartunlink_radios");
-
         var update = Builders<SmartUnlinkRadioEntity>.Update
             .Set(r => r.Enabled, enabled)
             .Set(r => r.UpdatedAt, DateTime.UtcNow);
 
-        var result = await collection.UpdateOneAsync(r => r.Id == id, update);
+        var result = await _mongoContext.SmartUnlinkRadios.UpdateOneAsync(r => r.Id == id, update);
 
         if (result.ModifiedCount == 0)
             return false;

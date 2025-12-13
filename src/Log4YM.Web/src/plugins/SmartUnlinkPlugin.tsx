@@ -45,7 +45,7 @@ export function SmartUnlinkPlugin() {
     setShowModal(true);
   };
 
-  const handleEditClick = (radio: RadioFormData) => {
+  const handleEditClick = (radio: { id: string; name: string; ipAddress: string; model: string; serialNumber: string; callsign?: string; enabled: boolean }) => {
     setFormData({
       id: radio.id,
       name: radio.name,
