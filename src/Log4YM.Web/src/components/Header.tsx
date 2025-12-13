@@ -1,6 +1,9 @@
 import { Settings, Layout } from 'lucide-react';
+import { useSettingsStore } from '../store/settingsStore';
 
 export function Header() {
+  const { openSettings } = useSettingsStore();
+
   return (
     <header className="h-14 bg-dark-800/90 backdrop-blur-xl border-b border-glass-100 flex items-center justify-between px-4">
       {/* Logo */}
@@ -37,7 +40,7 @@ export function Header() {
           <Layout className="w-4 h-4" />
         </button>
 
-        <button className="glass-button p-2" title="Settings">
+        <button onClick={openSettings} className="glass-button p-2" title="Settings">
           <Settings className="w-4 h-4" />
         </button>
       </div>

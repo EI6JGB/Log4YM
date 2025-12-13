@@ -17,6 +17,7 @@ export default {
         },
         dark: {
           900: '#1e1e1e',        // VS Code editor background
+          850: '#212122',        // Between 900 and 800
           800: '#252526',        // VS Code sidebar background
           700: '#2d2d2d',        // VS Code hover/selection
           600: '#3c3c3c',        // VS Code border/divider

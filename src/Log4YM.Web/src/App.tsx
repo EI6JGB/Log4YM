@@ -3,6 +3,7 @@ import { Layout, Model, TabNode, TabSetNode, BorderNode, IJsonModel, ITabSetRend
 import { X, Radio, Book, Zap, LayoutGrid, Antenna, Plus, Map, Compass } from 'lucide-react';
 import { Header } from './components/Header';
 import { StatusBar } from './components/StatusBar';
+import { SettingsPanel } from './components/SettingsPanel';
 import { useSignalR } from './hooks/useSignalR';
 import { LogEntryPlugin, LogHistoryPlugin, ClusterPlugin, MapPlugin, RotatorPlugin, GlobePlugin, AntennaGeniusPlugin } from './plugins';
 import { Globe as Globe3D } from 'lucide-react';
@@ -307,6 +308,9 @@ export function App() {
       </main>
 
       <StatusBar />
+
+      {/* Settings Panel (Modal) */}
+      <SettingsPanel />
     </div>
   );
 }
