@@ -46,10 +46,12 @@ builder.Services.AddSingleton<MongoDbContext>();
 // Register repositories
 builder.Services.AddScoped<IQsoRepository, QsoRepository>();
 builder.Services.AddScoped<ISpotRepository, SpotRepository>();
+builder.Services.AddScoped<ISettingsRepository, SettingsRepository>();
 
 // Register services
 builder.Services.AddScoped<IQsoService, QsoService>();
 builder.Services.AddScoped<ISpotService, SpotService>();
+builder.Services.AddScoped<ISettingsService, SettingsService>();
 
 // Register event bus
 builder.Services.AddSingleton<IEventBus, EventBus>();

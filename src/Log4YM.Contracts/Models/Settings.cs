@@ -3,31 +3,67 @@ using MongoDB.Bson.Serialization.Attributes;
 
 namespace Log4YM.Contracts.Models;
 
-public class StationSettings
+public class UserSettings
 {
     [BsonId]
-    public string Id { get; set; } = "station";
+    public string Id { get; set; } = "default";
 
+    [BsonElement("station")]
+    public StationSettings Station { get; set; } = new();
+
+    [BsonElement("qrz")]
+    public QrzSettings Qrz { get; set; } = new();
+
+    [BsonElement("appearance")]
+    public AppearanceSettings Appearance { get; set; } = new();
+
+    [BsonElement("updatedAt")]
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class StationSettings
+{
     [BsonElement("callsign")]
-    public string Callsign { get; set; } = null!;
+    public string Callsign { get; set; } = string.Empty;
 
-    [BsonElement("grid")]
-    public string Grid { get; set; } = null!;
+    [BsonElement("operatorName")]
+    public string OperatorName { get; set; } = string.Empty;
+
+    [BsonElement("gridSquare")]
+    public string GridSquare { get; set; } = string.Empty;
 
     [BsonElement("latitude")]
-    public double Latitude { get; set; }
+    public double? Latitude { get; set; }
 
     [BsonElement("longitude")]
-    public double Longitude { get; set; }
+    public double? Longitude { get; set; }
 
-    [BsonElement("qrzUsername")]
-    public string? QrzUsername { get; set; }
+    [BsonElement("city")]
+    public string City { get; set; } = string.Empty;
 
-    [BsonElement("name")]
-    public string? Name { get; set; }
+    [BsonElement("country")]
+    public string Country { get; set; } = string.Empty;
+}
 
-    [BsonElement("qth")]
-    public string? Qth { get; set; }
+public class QrzSettings
+{
+    [BsonElement("username")]
+    public string Username { get; set; } = string.Empty;
+
+    [BsonElement("password")]
+    public string Password { get; set; } = string.Empty; // Stored obfuscated
+
+    [BsonElement("enabled")]
+    public bool Enabled { get; set; }
+}
+
+public class AppearanceSettings
+{
+    [BsonElement("theme")]
+    public string Theme { get; set; } = "dark";
+
+    [BsonElement("compactMode")]
+    public bool CompactMode { get; set; }
 }
 
 public class PluginSettings

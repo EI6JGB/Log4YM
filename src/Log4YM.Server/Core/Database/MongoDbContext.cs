@@ -23,7 +23,7 @@ public class MongoDbContext
 
     public IMongoCollection<Qso> Qsos => _database.GetCollection<Qso>("qsos");
     public IMongoCollection<Spot> Spots => _database.GetCollection<Spot>("spots");
-    public IMongoCollection<StationSettings> Settings => _database.GetCollection<StationSettings>("settings");
+    public IMongoCollection<UserSettings> Settings => _database.GetCollection<UserSettings>("settings");
     public IMongoCollection<PluginSettings> PluginSettings => _database.GetCollection<PluginSettings>("pluginSettings");
     public IMongoCollection<Layout> Layouts => _database.GetCollection<Layout>("layouts");
 
