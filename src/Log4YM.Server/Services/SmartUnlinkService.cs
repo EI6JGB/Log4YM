@@ -140,7 +140,7 @@ public class SmartUnlinkService : BackgroundService
         var payload = $"discovery_protocol_version=3.1.0.2 " +
                       $"model={radio.Model} " +
                       $"serial={radio.SerialNumber} " +
-                      $"version=3.4.35.141 " +
+                      $"version={radio.Version} " +
                       $"nickname={nickname} " +
                       $"callsign={callsign} " +
                       $"ip={radio.IpAddress} " +
@@ -245,6 +245,7 @@ public class SmartUnlinkService : BackgroundService
             SerialNumber = dto.SerialNumber,
             Callsign = dto.Callsign,
             Enabled = dto.Enabled,
+            Version = dto.Version,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -263,7 +264,8 @@ public class SmartUnlinkService : BackgroundService
             entity.Model,
             entity.SerialNumber,
             entity.Callsign,
-            entity.Enabled
+            entity.Enabled,
+            entity.Version
         );
 
         await _hubContext.Clients.All.OnSmartUnlinkRadioAdded(evt);
@@ -281,6 +283,7 @@ public class SmartUnlinkService : BackgroundService
             .Set(r => r.IpAddress, dto.IpAddress)
             .Set(r => r.Model, dto.Model)
             .Set(r => r.SerialNumber, dto.SerialNumber)
+            .Set(r => r.Version, dto.Version)
             .Set(r => r.Callsign, dto.Callsign)
             .Set(r => r.Enabled, dto.Enabled)
             .Set(r => r.UpdatedAt, DateTime.UtcNow);
@@ -304,6 +307,7 @@ public class SmartUnlinkService : BackgroundService
                 SerialNumber = dto.SerialNumber,
                 Callsign = dto.Callsign,
                 Enabled = dto.Enabled,
+                Version = dto.Version,
                 UpdatedAt = DateTime.UtcNow
             };
             _radios[dto.Id] = updated;
@@ -319,7 +323,8 @@ public class SmartUnlinkService : BackgroundService
             dto.Model,
             dto.SerialNumber,
             dto.Callsign,
-            dto.Enabled
+            dto.Enabled,
+            dto.Version
         );
 
         await _hubContext.Clients.All.OnSmartUnlinkRadioUpdated(evt);
@@ -369,7 +374,8 @@ public class SmartUnlinkService : BackgroundService
                 updated.Model,
                 updated.SerialNumber,
                 updated.Callsign,
-                updated.Enabled
+                updated.Enabled,
+                updated.Version
             );
 
             await _hubContext.Clients.All.OnSmartUnlinkRadioUpdated(evt);
@@ -387,7 +393,8 @@ public class SmartUnlinkService : BackgroundService
             r.Model,
             r.SerialNumber,
             r.Callsign,
-            r.Enabled
+            r.Enabled,
+            r.Version
         )).ToList();
 
         return new SmartUnlinkStatusEvent(radios);
@@ -423,6 +430,7 @@ public record SmartUnlinkRadioEntity
     public string SerialNumber { get; init; } = "";
     public string? Callsign { get; init; }
     public bool Enabled { get; init; }
+    public string Version { get; init; } = "4.1.3.39644";
     public DateTime CreatedAt { get; init; }
     public DateTime UpdatedAt { get; init; }
 }

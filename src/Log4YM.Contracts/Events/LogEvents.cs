@@ -456,7 +456,8 @@ public record SmartUnlinkRadioDto(
     string Model,
     string SerialNumber,
     string? Callsign,
-    bool Enabled
+    bool Enabled,
+    string Version = "4.1.3.39644"
 );
 
 /// <summary>
@@ -469,7 +470,8 @@ public record SmartUnlinkRadioAddedEvent(
     string Model,
     string SerialNumber,
     string? Callsign,
-    bool Enabled
+    bool Enabled,
+    string Version = "4.1.3.39644"
 );
 
 /// <summary>
@@ -482,7 +484,8 @@ public record SmartUnlinkRadioUpdatedEvent(
     string Model,
     string SerialNumber,
     string? Callsign,
-    bool Enabled
+    bool Enabled,
+    string Version = "4.1.3.39644"
 );
 
 /// <summary>

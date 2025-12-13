@@ -305,6 +305,7 @@ export interface SmartUnlinkRadioDto {
   serialNumber: string;
   callsign?: string;
   enabled: boolean;
+  version?: string;
 }
 
 export interface SmartUnlinkRadioAddedEvent {
@@ -315,6 +316,7 @@ export interface SmartUnlinkRadioAddedEvent {
   serialNumber: string;
   callsign?: string;
   enabled: boolean;
+  version: string;
 }
 
 export interface SmartUnlinkRadioUpdatedEvent {
@@ -325,6 +327,7 @@ export interface SmartUnlinkRadioUpdatedEvent {
   serialNumber: string;
   callsign?: string;
   enabled: boolean;
+  version: string;
 }
 
 export interface SmartUnlinkRadioRemovedEvent {

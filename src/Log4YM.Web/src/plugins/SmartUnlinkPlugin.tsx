@@ -13,6 +13,7 @@ interface RadioFormData {
   serialNumber: string;
   callsign: string;
   enabled: boolean;
+  version: string;
 }
 
 const initialFormData: RadioFormData = {
@@ -22,6 +23,7 @@ const initialFormData: RadioFormData = {
   serialNumber: '',
   callsign: '',
   enabled: false,
+  version: '4.1.3.39644',
 };
 
 export function SmartUnlinkPlugin() {
@@ -45,7 +47,7 @@ export function SmartUnlinkPlugin() {
     setShowModal(true);
   };
 
-  const handleEditClick = (radio: { id: string; name: string; ipAddress: string; model: string; serialNumber: string; callsign?: string; enabled: boolean }) => {
+  const handleEditClick = (radio: { id: string; name: string; ipAddress: string; model: string; serialNumber: string; callsign?: string; enabled: boolean; version?: string }) => {
     setFormData({
       id: radio.id,
       name: radio.name,
@@ -54,6 +56,7 @@ export function SmartUnlinkPlugin() {
       serialNumber: radio.serialNumber,
       callsign: radio.callsign || '',
       enabled: radio.enabled,
+      version: radio.version || '4.1.3.39644',
     });
     setIsEditing(true);
     setShowModal(true);
@@ -80,6 +83,7 @@ export function SmartUnlinkPlugin() {
       serialNumber: formData.serialNumber,
       callsign: formData.callsign || undefined,
       enabled: formData.enabled,
+      version: formData.version,
     };
 
     if (isEditing) {
@@ -244,6 +248,23 @@ export function SmartUnlinkPlugin() {
                 />
               </div>
 
+              {/* Version */}
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">
+                  Firmware Version <span className="text-gray-500">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.version}
+                  onChange={(e) => setFormData({ ...formData, version: e.target.value })}
+                  className="w-full bg-dark-700 border border-glass-100 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-primary"
+                  placeholder="4.1.3.39644"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  SmartSDR version to advertise (must match your SmartSDR app version)
+                </p>
+              </div>
+
               {/* Buttons */}
               <div className="flex justify-end gap-2 pt-2">
                 <button
@@ -278,6 +299,7 @@ interface RadioCardProps {
     serialNumber: string;
     callsign?: string;
     enabled: boolean;
+    version?: string;
   };
   onEdit: () => void;
   onDelete: () => void;
