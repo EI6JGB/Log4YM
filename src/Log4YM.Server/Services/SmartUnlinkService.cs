@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using Microsoft.AspNetCore.SignalR;
@@ -76,12 +77,78 @@ public class SmartUnlinkService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Gets all broadcast addresses for local network interfaces.
+    /// This is important for VPN scenarios where 255.255.255.255 may not reach the correct network.
+    /// </summary>
+    private List<(string InterfaceName, IPAddress BroadcastAddress, IPAddress LocalAddress)> GetBroadcastAddresses()
+    {
+        var broadcasts = new List<(string InterfaceName, IPAddress BroadcastAddress, IPAddress LocalAddress)>();
+
+        try
+        {
+            foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                // Skip loopback and non-operational interfaces
+                if (networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback ||
+                    networkInterface.OperationalStatus != OperationalStatus.Up)
+                    continue;
+
+                var properties = networkInterface.GetIPProperties();
+
+                foreach (var unicast in properties.UnicastAddresses)
+                {
+                    // Only process IPv4 addresses
+                    if (unicast.Address.AddressFamily != AddressFamily.InterNetwork)
+                        continue;
+
+                    // Skip loopback addresses
+                    if (IPAddress.IsLoopback(unicast.Address))
+                        continue;
+
+                    // Calculate broadcast address: IP | (~mask)
+                    var ipBytes = unicast.Address.GetAddressBytes();
+                    var maskBytes = unicast.IPv4Mask.GetAddressBytes();
+                    var broadcastBytes = new byte[4];
+
+                    for (int i = 0; i < 4; i++)
+                    {
+                        broadcastBytes[i] = (byte)(ipBytes[i] | (~maskBytes[i] & 0xFF));
+                    }
+
+                    var broadcastAddress = new IPAddress(broadcastBytes);
+                    broadcasts.Add((networkInterface.Name, broadcastAddress, unicast.Address));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enumerate network interfaces, falling back to default broadcast");
+            // Fallback to default broadcast address
+            broadcasts.Add(("default", IPAddress.Broadcast, IPAddress.Any));
+        }
+
+        // If no interfaces found, use default
+        if (broadcasts.Count == 0)
+        {
+            broadcasts.Add(("default", IPAddress.Broadcast, IPAddress.Any));
+        }
+
+        return broadcasts;
+    }
+
     private async Task BroadcastLoopAsync(CancellationToken ct)
     {
         using var udpClient = new UdpClient();
         udpClient.EnableBroadcast = true;
 
-        _logger.LogInformation("SmartUnlink broadcast loop started on port {Port}", DiscoveryPort);
+        // Log discovered network interfaces
+        var broadcastAddresses = GetBroadcastAddresses();
+        _logger.LogInformation("SmartUnlink broadcast loop started. Discovered {Count} network interface(s):", broadcastAddresses.Count);
+        foreach (var (interfaceName, broadcastAddress, localAddress) in broadcastAddresses)
+        {
+            _logger.LogInformation("  {Interface}: {LocalIp} -> {BroadcastIp}", interfaceName, localAddress, broadcastAddress);
+        }
 
         while (!ct.IsCancellationRequested)
         {
@@ -89,23 +156,30 @@ public class SmartUnlinkService : BackgroundService
             {
                 await Task.Delay(BroadcastIntervalMs, ct);
 
+                // Refresh broadcast addresses periodically (interfaces may change)
+                broadcastAddresses = GetBroadcastAddresses();
+
                 foreach (var radio in _radios.Values.Where(r => r.Enabled))
                 {
                     try
                     {
                         var packet = BuildVita49DiscoveryPacket(radio);
 
-                        // Broadcast to both ports for maximum compatibility with all SmartSDR versions
-                        var endpoint4992 = new IPEndPoint(IPAddress.Broadcast, DiscoveryPort);
-                        var endpoint4991 = new IPEndPoint(IPAddress.Broadcast, StreamingPort);
+                        // Send to each network interface's broadcast address
+                        foreach (var (interfaceName, broadcastAddress, _) in broadcastAddresses)
+                        {
+                            // Broadcast to both ports for maximum compatibility with all SmartSDR versions
+                            var endpoint4992 = new IPEndPoint(broadcastAddress, DiscoveryPort);
+                            var endpoint4991 = new IPEndPoint(broadcastAddress, StreamingPort);
 
-                        await udpClient.SendAsync(packet, packet.Length, endpoint4992);
-                        await udpClient.SendAsync(packet, packet.Length, endpoint4991);
+                            await udpClient.SendAsync(packet, packet.Length, endpoint4992);
+                            await udpClient.SendAsync(packet, packet.Length, endpoint4991);
+                        }
 
                         _lastBroadcast[radio.Id!] = DateTime.UtcNow;
 
-                        _logger.LogDebug("Broadcast VITA-49 discovery for {Name} ({Model}) - {Bytes} bytes to ports {Port1}/{Port2}",
-                            radio.Name, radio.Model, packet.Length, DiscoveryPort, StreamingPort);
+                        _logger.LogDebug("Broadcast VITA-49 discovery for {Name} ({Model}) - {Bytes} bytes to {InterfaceCount} interface(s) on ports {Port1}/{Port2}",
+                            radio.Name, radio.Model, packet.Length, broadcastAddresses.Count, DiscoveryPort, StreamingPort);
                     }
                     catch (Exception ex)
                     {

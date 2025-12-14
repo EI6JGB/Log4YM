@@ -10,7 +10,6 @@ interface RadioFormData {
   name: string;
   ipAddress: string;
   model: string;
-  serialNumber: string;
   callsign: string;
   enabled: boolean;
   version: string;
@@ -20,7 +19,6 @@ const initialFormData: RadioFormData = {
   name: '',
   ipAddress: '',
   model: 'FLEX-6600',
-  serialNumber: '',
   callsign: '',
   enabled: false,
   version: '4.1.3.39644',
@@ -53,7 +51,6 @@ export function SmartUnlinkPlugin() {
       name: radio.name,
       ipAddress: radio.ipAddress,
       model: radio.model,
-      serialNumber: radio.serialNumber,
       callsign: radio.callsign || '',
       enabled: radio.enabled,
       version: radio.version || '4.1.3.39644',
@@ -80,7 +77,7 @@ export function SmartUnlinkPlugin() {
       name: formData.name,
       ipAddress: formData.ipAddress,
       model: formData.model,
-      serialNumber: formData.serialNumber,
+      serialNumber: '0000-0000-0000-0000',
       callsign: formData.callsign || undefined,
       enabled: formData.enabled,
       version: formData.version,
@@ -105,7 +102,6 @@ export function SmartUnlinkPlugin() {
 
   const isFormValid = formData.name.trim() !== '' &&
     validateIp(formData.ipAddress) &&
-    formData.serialNumber.trim() !== '' &&
     formData.model !== '';
 
   return (
@@ -215,23 +211,6 @@ export function SmartUnlinkPlugin() {
                     </option>
                   ))}
                 </select>
-              </div>
-
-              {/* Serial Number */}
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">
-                  Serial Number <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.serialNumber}
-                  onChange={(e) => setFormData({ ...formData, serialNumber: e.target.value })}
-                  className="w-full bg-dark-700 border border-glass-100 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-primary"
-                  placeholder="1234-5678-9ABC-DEF0"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Find this in SmartSDR under Radio &gt; Info
-                </p>
               </div>
 
               {/* Callsign */}
@@ -347,9 +326,6 @@ function RadioCard({ radio, onEdit, onDelete, onToggleEnabled }: RadioCardProps)
               <span>{radio.callsign}</span>
             </>
           )}
-        </div>
-        <div className="text-xs text-gray-500 font-mono">
-          SN: {radio.serialNumber}
         </div>
       </div>
 
