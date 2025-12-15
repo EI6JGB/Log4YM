@@ -15,6 +15,9 @@ import {
   Key,
   CheckCircle,
   AlertCircle,
+  Compass,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { useSettingsStore, SettingsSection } from '../store/settingsStore';
 import { useAppStore } from '../store/appStore';
@@ -32,6 +35,12 @@ const SETTINGS_SECTIONS: { id: SettingsSection; name: string; icon: React.ReactN
     name: 'QRZ.com',
     icon: <Globe className="w-5 h-5" />,
     description: 'QRZ lookup credentials',
+  },
+  {
+    id: 'rotator',
+    name: 'Rotator',
+    icon: <Compass className="w-5 h-5" />,
+    description: 'Hamlib rotctld connection',
   },
   {
     id: 'appearance',
@@ -303,6 +312,134 @@ function QrzSettingsSection() {
   );
 }
 
+// Rotator Settings Section
+function RotatorSettingsSection() {
+  const { settings, updateRotatorSettings } = useSettingsStore();
+  const rotator = settings.rotator;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-gray-100 mb-1">Rotator Control</h3>
+        <p className="text-sm text-gray-500">
+          Configure connection to hamlib rotctld for antenna rotator control.
+        </p>
+      </div>
+
+      {/* Enable toggle */}
+      <div className="flex items-center justify-between p-4 bg-dark-700/50 rounded-lg border border-glass-100">
+        <div className="flex items-center gap-3">
+          {rotator.enabled ? (
+            <Wifi className="w-5 h-5 text-accent-success" />
+          ) : (
+            <WifiOff className="w-5 h-5 text-gray-500" />
+          )}
+          <div>
+            <p className="font-medium text-gray-200">Enable Rotator Control</p>
+            <p className="text-sm text-gray-500">Connect to rotctld TCP server</p>
+          </div>
+        </div>
+        <button
+          onClick={() => updateRotatorSettings({ enabled: !rotator.enabled })}
+          className={`relative w-12 h-6 rounded-full transition-colors ${
+            rotator.enabled ? 'bg-accent-success' : 'bg-dark-500'
+          }`}
+        >
+          <span
+            className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+              rotator.enabled ? 'translate-x-7' : 'translate-x-1'
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* Connection settings */}
+      <div className={`space-y-4 ${!rotator.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+        <div className="grid grid-cols-2 gap-4">
+          {/* IP Address */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-300">
+              <Globe className="w-4 h-4 text-accent-primary" />
+              IP Address
+            </label>
+            <input
+              type="text"
+              value={rotator.ipAddress}
+              onChange={(e) => updateRotatorSettings({ ipAddress: e.target.value })}
+              placeholder="127.0.0.1"
+              className="glass-input w-full font-mono"
+              disabled={!rotator.enabled}
+            />
+          </div>
+
+          {/* Port */}
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-300">
+              <Compass className="w-4 h-4 text-accent-primary" />
+              Port
+            </label>
+            <input
+              type="number"
+              value={rotator.port}
+              onChange={(e) => updateRotatorSettings({ port: parseInt(e.target.value) || 4533 })}
+              placeholder="4533"
+              className="glass-input w-full font-mono"
+              disabled={!rotator.enabled}
+            />
+          </div>
+        </div>
+
+        {/* Polling Interval */}
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-300">
+            Polling Interval (ms)
+          </label>
+          <input
+            type="number"
+            value={rotator.pollingIntervalMs}
+            onChange={(e) => updateRotatorSettings({ pollingIntervalMs: parseInt(e.target.value) || 500 })}
+            min={100}
+            max={5000}
+            step={100}
+            placeholder="500"
+            className="glass-input w-48 font-mono"
+            disabled={!rotator.enabled}
+          />
+          <p className="text-xs text-gray-600">
+            How often to poll the rotator for position updates (100-5000ms)
+          </p>
+        </div>
+
+        {/* Rotator ID */}
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-300">
+            Rotator ID
+          </label>
+          <input
+            type="text"
+            value={rotator.rotatorId}
+            onChange={(e) => updateRotatorSettings({ rotatorId: e.target.value })}
+            placeholder="default"
+            className="glass-input w-48 font-mono"
+            disabled={!rotator.enabled}
+          />
+          <p className="text-xs text-gray-600">
+            Identifier for this rotator (useful if you have multiple rotators)
+          </p>
+        </div>
+      </div>
+
+      {/* Help text */}
+      <div className="pt-4 border-t border-glass-100">
+        <p className="text-xs text-gray-600">
+          The rotator service connects to hamlib's rotctld daemon via TCP. Make sure rotctld is
+          running and accessible at the configured address. Default port for rotctld is 4533.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // Appearance Settings Section
 function AppearanceSettingsSection() {
   const { settings, updateAppearanceSettings } = useSettingsStore();
@@ -437,6 +574,8 @@ export function SettingsPanel() {
         return <StationSettingsSection />;
       case 'qrz':
         return <QrzSettingsSection />;
+      case 'rotator':
+        return <RotatorSettingsSection />;
       case 'appearance':
         return <AppearanceSettingsSection />;
       case 'about':

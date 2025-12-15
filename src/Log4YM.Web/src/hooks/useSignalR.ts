@@ -47,6 +47,7 @@ export function useSignalR() {
             queryClient.invalidateQueries({ queryKey: ['spots'] });
           },
           onRotatorPosition: (evt) => {
+            console.log('Rotator position:', evt.currentAzimuth, 'moving:', evt.isMoving);
             setRotatorPosition(evt);
           },
           onRigStatus: (evt) => {
@@ -135,6 +136,7 @@ export function useSignalR() {
         await signalRService.requestPgxlStatus();
         await signalRService.requestRadioStatus();
         await signalRService.requestSmartUnlinkStatus();
+        await signalRService.requestRotatorStatus();
         setConnected(true);
       } catch (error) {
         console.error('Failed to connect to SignalR:', error);

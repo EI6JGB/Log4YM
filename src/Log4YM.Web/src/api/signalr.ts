@@ -612,6 +612,11 @@ class SignalRService {
     await this.connection?.invoke('RequestSmartUnlinkStatus');
   }
 
+  // Rotator methods
+  async requestRotatorStatus(): Promise<void> {
+    await this.connection?.invoke('RequestRotatorStatus');
+  }
+
   get isConnected(): boolean {
     return this.connection?.state === signalR.HubConnectionState.Connected;
   }

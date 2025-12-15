@@ -85,7 +85,7 @@ public record SpotSelectedEvent(
 /// </summary>
 public record RotatorPositionEvent(
     string RotatorId,
-    double Azimuth,
+    double CurrentAzimuth,
     bool IsMoving,
     double? TargetAzimuth = null
 );

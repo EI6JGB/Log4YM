@@ -48,6 +48,7 @@ public class LogHub : Hub<ILogHubClient>
     private readonly FlexRadioService _flexRadioService;
     private readonly TciRadioService _tciRadioService;
     private readonly SmartUnlinkService _smartUnlinkService;
+    private readonly RotatorService _rotatorService;
 
     public LogHub(
         ILogger<LogHub> logger,
@@ -55,7 +56,8 @@ public class LogHub : Hub<ILogHubClient>
         PgxlService pgxlService,
         FlexRadioService flexRadioService,
         TciRadioService tciRadioService,
-        SmartUnlinkService smartUnlinkService)
+        SmartUnlinkService smartUnlinkService,
+        RotatorService rotatorService)
     {
         _logger = logger;
         _antennaGeniusService = antennaGeniusService;
@@ -63,6 +65,7 @@ public class LogHub : Hub<ILogHubClient>
         _flexRadioService = flexRadioService;
         _tciRadioService = tciRadioService;
         _smartUnlinkService = smartUnlinkService;
+        _rotatorService = rotatorService;
     }
 
     public override async Task OnConnectedAsync()
@@ -93,15 +96,21 @@ public class LogHub : Hub<ILogHubClient>
 
     public async Task CommandRotator(RotatorCommandEvent evt)
     {
-        _logger.LogDebug("Rotator command: {Azimuth} from {Source}", evt.TargetAzimuth, evt.Source);
-        // This would be handled by the rotator service
-        // For now, just broadcast it
-        await Clients.All.OnRotatorPosition(new RotatorPositionEvent(
-            evt.RotatorId,
-            evt.TargetAzimuth,
-            true,
-            evt.TargetAzimuth
-        ));
+        _logger.LogInformation("Rotator command: {Azimuth}° from {Source}", evt.TargetAzimuth, evt.Source);
+        await _rotatorService.SetPositionAsync(evt.TargetAzimuth);
+    }
+
+    public async Task StopRotator()
+    {
+        _logger.LogInformation("Rotator stop command");
+        await _rotatorService.StopAsync();
+    }
+
+    public async Task RequestRotatorStatus()
+    {
+        _logger.LogDebug("Client requested rotator status");
+        var status = _rotatorService.GetCurrentStatus();
+        await Clients.Caller.OnRotatorPosition(status);
     }
 
     // Antenna Genius methods

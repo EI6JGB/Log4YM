@@ -38,13 +38,22 @@ export interface AppearanceSettings {
   compactMode: boolean;
 }
 
+export interface RotatorSettings {
+  enabled: boolean;
+  ipAddress: string;
+  port: number;
+  pollingIntervalMs: number;
+  rotatorId: string;
+}
+
 export interface Settings {
   station: StationSettings;
   qrz: QrzSettings;
   appearance: AppearanceSettings;
+  rotator: RotatorSettings;
 }
 
-export type SettingsSection = 'station' | 'qrz' | 'appearance' | 'about';
+export type SettingsSection = 'station' | 'qrz' | 'rotator' | 'appearance' | 'about';
 
 interface SettingsState {
   // Settings data
@@ -65,6 +74,7 @@ interface SettingsState {
   updateStationSettings: (station: Partial<StationSettings>) => void;
   updateQrzSettings: (qrz: Partial<QrzSettings>) => void;
   updateAppearanceSettings: (appearance: Partial<AppearanceSettings>) => void;
+  updateRotatorSettings: (rotator: Partial<RotatorSettings>) => void;
 
   // QRZ credentials with obfuscation
   setQrzPassword: (password: string) => void;
@@ -94,6 +104,13 @@ const defaultSettings: Settings = {
   appearance: {
     theme: 'dark',
     compactMode: false,
+  },
+  rotator: {
+    enabled: false,
+    ipAddress: '127.0.0.1',
+    port: 4533,
+    pollingIntervalMs: 500,
+    rotatorId: 'default',
   },
 };
 
@@ -138,6 +155,16 @@ export const useSettingsStore = create<SettingsState>()(
           settings: {
             ...state.settings,
             appearance: { ...state.settings.appearance, ...appearance },
+          },
+          isDirty: true,
+        })),
+
+      // Rotator settings
+      updateRotatorSettings: (rotator) =>
+        set((state) => ({
+          settings: {
+            ...state.settings,
+            rotator: { ...state.settings.rotator, ...rotator },
           },
           isDirty: true,
         })),
@@ -201,6 +228,21 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'log4ym-settings',
       partialize: (state) => ({ settings: state.settings }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as { settings?: Partial<Settings> };
+        return {
+          ...currentState,
+          settings: {
+            ...defaultSettings,
+            ...persisted?.settings,
+            // Deep merge each settings section with defaults
+            station: { ...defaultSettings.station, ...persisted?.settings?.station },
+            qrz: { ...defaultSettings.qrz, ...persisted?.settings?.qrz },
+            appearance: { ...defaultSettings.appearance, ...persisted?.settings?.appearance },
+            rotator: { ...defaultSettings.rotator, ...persisted?.settings?.rotator },
+          },
+        };
+      },
     }
   )
 );

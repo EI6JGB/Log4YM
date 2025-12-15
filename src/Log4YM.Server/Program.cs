@@ -76,6 +76,10 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<TciRadioService>()
 builder.Services.AddSingleton<SmartUnlinkService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SmartUnlinkService>());
 
+// Register Rotator service (hamlib rotctld)
+builder.Services.AddSingleton<RotatorService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RotatorService>());
+
 // Register DX Cluster service
 builder.Services.AddHostedService<DxClusterService>();
 

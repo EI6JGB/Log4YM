@@ -17,6 +17,9 @@ public class UserSettings
     [BsonElement("appearance")]
     public AppearanceSettings Appearance { get; set; } = new();
 
+    [BsonElement("rotator")]
+    public RotatorSettings Rotator { get; set; } = new();
+
     [BsonElement("updatedAt")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
@@ -64,6 +67,24 @@ public class AppearanceSettings
 
     [BsonElement("compactMode")]
     public bool CompactMode { get; set; }
+}
+
+public class RotatorSettings
+{
+    [BsonElement("enabled")]
+    public bool Enabled { get; set; }
+
+    [BsonElement("ipAddress")]
+    public string IpAddress { get; set; } = "127.0.0.1";
+
+    [BsonElement("port")]
+    public int Port { get; set; } = 4533;  // Default hamlib rotctld port
+
+    [BsonElement("pollingIntervalMs")]
+    public int PollingIntervalMs { get; set; } = 500;
+
+    [BsonElement("rotatorId")]
+    public string RotatorId { get; set; } = "default";
 }
 
 public class PluginSettings
