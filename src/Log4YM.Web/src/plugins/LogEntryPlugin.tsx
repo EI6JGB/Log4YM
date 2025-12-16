@@ -1,9 +1,10 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Send, Search, User, MapPin, Radio } from 'lucide-react';
+import { Send, Search, User, MapPin, Radio, Link, Unlink } from 'lucide-react';
 import { api, CreateQsoRequest } from '../api/client';
 import { useSignalR } from '../hooks/useSignalR';
 import { useAppStore } from '../store/appStore';
+import { useSettingsStore } from '../store/settingsStore';
 import { GlassPanel } from '../components/GlassPanel';
 import { getCountryFlag } from '../core/countryFlags';
 
@@ -13,7 +14,9 @@ const MODES = ['SSB', 'CW', 'FT8', 'FT4', 'RTTY', 'PSK31', 'AM', 'FM'];
 export function LogEntryPlugin() {
   const queryClient = useQueryClient();
   const { focusCallsign } = useSignalR();
-  const { focusedCallsignInfo } = useAppStore();
+  const { focusedCallsignInfo, radioStates, selectedRadioId } = useAppStore();
+  const { settings, updateRadioSettings } = useSettingsStore();
+  const followRadio = settings.radio.followRadio;
 
   const [formData, setFormData] = useState({
     callsign: '',
@@ -26,6 +29,42 @@ export function LogEntryPlugin() {
     grid: '',
     comment: '',
   });
+
+  // Get current radio state
+  const currentRadioState = selectedRadioId ? radioStates.get(selectedRadioId) : null;
+
+  // Auto-populate from radio state when followRadio is enabled
+  useEffect(() => {
+    if (followRadio && currentRadioState) {
+      const frequencyKhz = (currentRadioState.frequencyHz / 1000).toFixed(3);
+      setFormData(prev => ({
+        ...prev,
+        frequency: frequencyKhz,
+        band: currentRadioState.band || prev.band,
+        mode: normalizeMode(currentRadioState.mode) || prev.mode,
+      }));
+    }
+  }, [followRadio, currentRadioState?.frequencyHz, currentRadioState?.band, currentRadioState?.mode]);
+
+  // Normalize mode names from radio to match our MODES list
+  const normalizeMode = (mode: string): string => {
+    const upperMode = mode?.toUpperCase() || '';
+    // Map common variations
+    if (upperMode.includes('LSB') || upperMode.includes('USB')) return 'SSB';
+    if (upperMode.includes('CW')) return 'CW';
+    if (upperMode.includes('FT8')) return 'FT8';
+    if (upperMode.includes('FT4')) return 'FT4';
+    if (upperMode.includes('RTTY') || upperMode.includes('FSK')) return 'RTTY';
+    if (upperMode.includes('PSK')) return 'PSK31';
+    if (upperMode.includes('AM')) return 'AM';
+    if (upperMode.includes('FM') || upperMode.includes('NFM')) return 'FM';
+    // Return original if in list, otherwise default
+    return MODES.includes(upperMode) ? upperMode : 'SSB';
+  };
+
+  const toggleFollowRadio = () => {
+    updateRadioSettings({ followRadio: !followRadio });
+  };
 
   const createQso = useMutation({
     mutationFn: (data: CreateQsoRequest) => api.createQso(data),
@@ -90,6 +129,30 @@ export function LogEntryPlugin() {
     <GlassPanel
       title="Log Entry"
       icon={<Radio className="w-5 h-5" />}
+      actions={
+        <button
+          type="button"
+          onClick={toggleFollowRadio}
+          className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded transition-all ${
+            followRadio
+              ? 'bg-accent-success/20 text-accent-success hover:bg-accent-success/30'
+              : 'bg-dark-600 text-gray-400 hover:bg-dark-500'
+          }`}
+          title={followRadio ? 'Following radio frequency' : 'Not following radio'}
+        >
+          {followRadio ? (
+            <>
+              <Link className="w-3.5 h-3.5" />
+              <span>Following</span>
+            </>
+          ) : (
+            <>
+              <Unlink className="w-3.5 h-3.5" />
+              <span>Manual</span>
+            </>
+          )}
+        </button>
+      }
     >
       <form onSubmit={handleSubmit} className="p-4 space-y-4">
         {/* Callsign Input */}
@@ -149,11 +212,18 @@ export function LogEntryPlugin() {
         {/* Band and Mode */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-sm text-gray-400">Band</label>
+            <label className="text-sm text-gray-400 flex items-center gap-2">
+              Band
+              {followRadio && currentRadioState && (
+                <span className="w-2 h-2 rounded-full bg-accent-success animate-pulse" title="From radio" />
+              )}
+            </label>
             <select
               value={formData.band}
               onChange={(e) => setFormData(prev => ({ ...prev, band: e.target.value }))}
-              className="glass-input w-full"
+              className={`glass-input w-full ${
+                followRadio && currentRadioState ? 'border-accent-success/30' : ''
+              }`}
             >
               {BANDS.map(band => (
                 <option key={band} value={band}>{band}</option>
@@ -162,11 +232,18 @@ export function LogEntryPlugin() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm text-gray-400">Mode</label>
+            <label className="text-sm text-gray-400 flex items-center gap-2">
+              Mode
+              {followRadio && currentRadioState && (
+                <span className="w-2 h-2 rounded-full bg-accent-success animate-pulse" title="From radio" />
+              )}
+            </label>
             <select
               value={formData.mode}
               onChange={(e) => setFormData(prev => ({ ...prev, mode: e.target.value }))}
-              className="glass-input w-full"
+              className={`glass-input w-full ${
+                followRadio && currentRadioState ? 'border-accent-success/30' : ''
+              }`}
             >
               {MODES.map(mode => (
                 <option key={mode} value={mode}>{mode}</option>
@@ -209,13 +286,24 @@ export function LogEntryPlugin() {
 
         {/* Frequency */}
         <div className="space-y-2">
-          <label className="text-sm text-gray-400">Frequency (kHz)</label>
+          <label className="text-sm text-gray-400 flex items-center gap-2">
+            Frequency (kHz)
+            {followRadio && currentRadioState && (
+              <span className="flex items-center gap-1 text-xs text-accent-success">
+                <Link className="w-3 h-3" />
+                Radio
+              </span>
+            )}
+          </label>
           <input
             type="text"
             value={formData.frequency}
             onChange={(e) => setFormData(prev => ({ ...prev, frequency: e.target.value }))}
             placeholder="14250"
-            className="glass-input w-full font-mono"
+            className={`glass-input w-full font-mono ${
+              followRadio && currentRadioState ? 'border-accent-success/30' : ''
+            }`}
+            readOnly={followRadio && !!currentRadioState}
           />
         </div>
 

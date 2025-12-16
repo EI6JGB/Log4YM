@@ -46,11 +46,16 @@ export interface RotatorSettings {
   rotatorId: string;
 }
 
+export interface RadioSettings {
+  followRadio: boolean;
+}
+
 export interface Settings {
   station: StationSettings;
   qrz: QrzSettings;
   appearance: AppearanceSettings;
   rotator: RotatorSettings;
+  radio: RadioSettings;
 }
 
 export type SettingsSection = 'station' | 'qrz' | 'rotator' | 'appearance' | 'about';
@@ -75,6 +80,7 @@ interface SettingsState {
   updateQrzSettings: (qrz: Partial<QrzSettings>) => void;
   updateAppearanceSettings: (appearance: Partial<AppearanceSettings>) => void;
   updateRotatorSettings: (rotator: Partial<RotatorSettings>) => void;
+  updateRadioSettings: (radio: Partial<RadioSettings>) => void;
 
   // QRZ credentials with obfuscation
   setQrzPassword: (password: string) => void;
@@ -111,6 +117,9 @@ const defaultSettings: Settings = {
     port: 4533,
     pollingIntervalMs: 500,
     rotatorId: 'default',
+  },
+  radio: {
+    followRadio: true,
   },
 };
 
@@ -165,6 +174,16 @@ export const useSettingsStore = create<SettingsState>()(
           settings: {
             ...state.settings,
             rotator: { ...state.settings.rotator, ...rotator },
+          },
+          isDirty: true,
+        })),
+
+      // Radio settings
+      updateRadioSettings: (radio) =>
+        set((state) => ({
+          settings: {
+            ...state.settings,
+            radio: { ...state.settings.radio, ...radio },
           },
           isDirty: true,
         })),
@@ -240,6 +259,7 @@ export const useSettingsStore = create<SettingsState>()(
             qrz: { ...defaultSettings.qrz, ...persisted?.settings?.qrz },
             appearance: { ...defaultSettings.appearance, ...persisted?.settings?.appearance },
             rotator: { ...defaultSettings.rotator, ...persisted?.settings?.rotator },
+            radio: { ...defaultSettings.radio, ...persisted?.settings?.radio },
           },
         };
       },

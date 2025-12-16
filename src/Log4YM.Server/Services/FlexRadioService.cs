@@ -301,14 +301,23 @@ internal class FlexRadioConnection
 
     private TcpClient? _tcpClient;
     private NetworkStream? _stream;
+    private StreamWriter? _writer;
     private CancellationTokenSource? _cts;
 
     private string? _selectedSlice;
+    private string? _txSlice;  // Auto-detected TX slice
+    private int _commandSequence;
     private long _currentFrequencyHz;
     private string _currentMode = "USB";
     private bool _isTransmitting;
 
+    // Track slice states for auto-detection
+    private readonly ConcurrentDictionary<string, SliceState> _sliceStates = new();
+
     public bool IsConnected => _tcpClient?.Connected ?? false;
+
+    // The active slice is either manually selected or auto-detected TX slice
+    private string? ActiveSlice => _selectedSlice ?? _txSlice;
 
     public FlexRadioConnection(FlexRadioDevice device, ILogger logger, IHubContext<LogHub, ILogHubClient> hubContext)
     {
@@ -330,11 +339,17 @@ internal class FlexRadioConnection
             _tcpClient = new TcpClient();
             await _tcpClient.ConnectAsync(_device.IpAddress, _device.Port, ct);
             _stream = _tcpClient.GetStream();
+            _writer = new StreamWriter(_stream, Encoding.ASCII) { AutoFlush = true };
 
             _logger.LogInformation("Connected to FlexRadio {Serial}", _device.Serial);
 
             await _hubContext.BroadcastRadioConnectionStateChanged(
                 new RadioConnectionStateChangedEvent(_device.Id, RadioConnectionState.Connected));
+
+            // Subscribe to slice and interlock updates
+            await SendCommandAsync("sub slice all");
+            await SendCommandAsync("sub interlock all");
+            await SendCommandAsync("sub tx all");
 
             // Start receive loop
             await ReceiveLoopAsync(ct);
@@ -345,6 +360,17 @@ internal class FlexRadioConnection
             await _hubContext.BroadcastRadioConnectionStateChanged(
                 new RadioConnectionStateChangedEvent(_device.Id, RadioConnectionState.Error, ex.Message));
         }
+    }
+
+    private async Task SendCommandAsync(string command)
+    {
+        if (_writer == null) return;
+
+        var seq = Interlocked.Increment(ref _commandSequence);
+        var fullCommand = $"C{seq}|{command}";
+        _logger.LogDebug("FlexRadio TX: {Command}", fullCommand);
+
+        await _writer.WriteLineAsync(fullCommand);
     }
 
     public Task DisconnectAsync()
@@ -376,7 +402,7 @@ internal class FlexRadioConnection
             _currentMode,
             _isTransmitting,
             BandHelper.GetBand(_currentFrequencyHz),
-            _selectedSlice
+            ActiveSlice
         );
     }
 
@@ -421,34 +447,64 @@ internal class FlexRadioConnection
 
         foreach (var line in lines)
         {
-            if (line.Contains("slice") && (_selectedSlice == null || line.Contains(_selectedSlice)))
+            // Parse slice status messages: S<handle>|slice <num> ...
+            var sliceMatch = Regex.Match(line, @"slice\s+(\d+|[A-Z])");
+            if (sliceMatch.Success)
             {
+                var sliceId = sliceMatch.Groups[1].Value;
+                var sliceState = _sliceStates.GetOrAdd(sliceId, _ => new SliceState { Id = sliceId });
+
                 // Parse frequency from slice status
                 var freqMatch = Regex.Match(line, @"RF_frequency=(\d+\.?\d*)");
                 if (freqMatch.Success && double.TryParse(freqMatch.Groups[1].Value, out var freqMhz))
                 {
-                    var newFreq = (long)(freqMhz * 1_000_000);
-                    if (newFreq != _currentFrequencyHz)
-                    {
-                        _currentFrequencyHz = newFreq;
-                        await BroadcastStateAsync();
-                    }
+                    sliceState.FrequencyHz = (long)(freqMhz * 1_000_000);
                 }
 
                 // Parse mode
                 var modeMatch = Regex.Match(line, @"mode=(\w+)");
                 if (modeMatch.Success)
                 {
-                    var newMode = modeMatch.Groups[1].Value.ToUpper();
-                    if (newMode != _currentMode)
+                    sliceState.Mode = modeMatch.Groups[1].Value.ToUpper();
+                }
+
+                // Parse TX state for this slice - this identifies the CAT slice
+                var txMatch = Regex.Match(line, @"tx=(\d)");
+                if (txMatch.Success && txMatch.Groups[1].Value == "1")
+                {
+                    // This slice is the TX slice - auto-select it if no manual selection
+                    if (_txSlice != sliceId)
                     {
-                        _currentMode = newMode;
+                        _txSlice = sliceId;
+                        _logger.LogInformation("FlexRadio auto-detected TX slice: {Slice}", sliceId);
+                    }
+                }
+
+                // Update current state if this is the active slice
+                if (ActiveSlice == sliceId || ActiveSlice == null)
+                {
+                    var stateChanged = false;
+
+                    if (sliceState.FrequencyHz != _currentFrequencyHz)
+                    {
+                        _currentFrequencyHz = sliceState.FrequencyHz;
+                        stateChanged = true;
+                    }
+
+                    if (sliceState.Mode != _currentMode)
+                    {
+                        _currentMode = sliceState.Mode;
+                        stateChanged = true;
+                    }
+
+                    if (stateChanged)
+                    {
                         await BroadcastStateAsync();
                     }
                 }
             }
 
-            // Parse TX state
+            // Parse TX state from interlock messages
             if (line.Contains("interlock") || line.Contains("transmit"))
             {
                 var txMatch = Regex.Match(line, @"state=(\w+)");
@@ -473,4 +529,12 @@ internal class FlexRadioConnection
             await _hubContext.BroadcastRadioStateChanged(state);
         }
     }
+}
+
+internal class SliceState
+{
+    public required string Id { get; set; }
+    public long FrequencyHz { get; set; }
+    public string Mode { get; set; } = "USB";
+    public bool IsTx { get; set; }
 }
