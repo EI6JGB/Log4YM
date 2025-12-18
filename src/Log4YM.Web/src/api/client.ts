@@ -168,6 +168,148 @@ class ApiClient {
   async getPlugins(): Promise<Array<{ id: string; name: string; version: string; enabled: boolean }>> {
     return this.fetch('/plugins');
   }
+
+  // QRZ
+  async getQrzSubscription(): Promise<QrzSubscriptionResponse> {
+    return this.fetch('/qrz/subscription');
+  }
+
+  async updateQrzSettings(settings: QrzSettingsRequest): Promise<{ success: boolean; message: string; hasXmlSubscription: boolean }> {
+    return this.fetch('/qrz/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  }
+
+  async uploadToQrz(qsoIds: string[]): Promise<QrzUploadResponse> {
+    return this.fetch('/qrz/upload', {
+      method: 'POST',
+      body: JSON.stringify({ qsoIds }),
+    });
+  }
+
+  async lookupCallsignQrz(callsign: string): Promise<QrzCallsignResponse> {
+    return this.fetch(`/qrz/lookup/${encodeURIComponent(callsign)}`);
+  }
+
+  // ADIF
+  async importAdif(file: File, skipDuplicates = true): Promise<AdifImportResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE}/adif/import?skipDuplicates=${skipDuplicates}`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async exportAdif(request?: AdifExportRequest): Promise<Blob> {
+    const params = new URLSearchParams();
+    if (request?.callsign) params.append('callsign', request.callsign);
+    if (request?.band) params.append('band', request.band);
+    if (request?.mode) params.append('mode', request.mode);
+    if (request?.fromDate) params.append('fromDate', request.fromDate);
+    if (request?.toDate) params.append('toDate', request.toDate);
+    const qs = params.toString();
+
+    const response = await fetch(`${API_BASE}/adif/export${qs ? `?${qs}` : ''}`, {
+      method: 'GET',
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.blob();
+  }
+
+  async exportSelectedQsos(qsoIds: string[]): Promise<Blob> {
+    const response = await fetch(`${API_BASE}/adif/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qsoIds }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.blob();
+  }
+}
+
+// QRZ Types
+export interface QrzSubscriptionResponse {
+  isValid: boolean;
+  hasXmlSubscription: boolean;
+  username?: string;
+  message?: string;
+  expirationDate?: string;
+}
+
+export interface QrzSettingsRequest {
+  username: string;
+  password: string;
+  apiKey?: string;
+  enabled?: boolean;
+}
+
+export interface QrzUploadResponse {
+  totalCount: number;
+  successCount: number;
+  failedCount: number;
+  results: QrzUploadResult[];
+}
+
+export interface QrzUploadResult {
+  success: boolean;
+  logId?: string;
+  message?: string;
+  qsoId?: string;
+}
+
+export interface QrzCallsignResponse {
+  callsign: string;
+  name?: string;
+  firstName?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  grid?: string;
+  latitude?: number;
+  longitude?: number;
+  dxcc?: number;
+  cqZone?: number;
+  ituZone?: number;
+  email?: string;
+  qslManager?: string;
+  imageUrl?: string;
+  licenseExpiration?: string;
+}
+
+// ADIF Types
+export interface AdifImportResponse {
+  totalRecords: number;
+  importedCount: number;
+  skippedDuplicates: number;
+  errorCount: number;
+  errors: string[];
+}
+
+export interface AdifExportRequest {
+  callsign?: string;
+  band?: string;
+  mode?: string;
+  fromDate?: string;
+  toDate?: string;
+  qsoIds?: string[];
 }
 
 export const api = new ApiClient();

@@ -5,8 +5,9 @@ import { Header } from './components/Header';
 import { StatusBar } from './components/StatusBar';
 import { SettingsPanel } from './components/SettingsPanel';
 import { useSignalR } from './hooks/useSignalR';
-import { LogEntryPlugin, LogHistoryPlugin, ClusterPlugin, MapPlugin, RotatorPlugin, GlobePlugin, AntennaGeniusPlugin, PgxlPlugin, SmartUnlinkPlugin, RadioPlugin } from './plugins';
+import { LogEntryPlugin, LogHistoryPlugin, ClusterPlugin, MapPlugin, RotatorPlugin, GlobePlugin, AntennaGeniusPlugin, PgxlPlugin, SmartUnlinkPlugin, RadioPlugin, AdifPlugin } from './plugins';
 import { Globe as Globe3D } from 'lucide-react';
+import { FileText } from 'lucide-react';
 
 import 'flexlayout-react/style/dark.css';
 
@@ -61,6 +62,11 @@ const PLUGINS: Record<string, { name: string; icon: React.ReactNode; component: 
     name: 'Radio',
     icon: <Radio className="w-4 h-4" />,
     component: RadioPlugin,
+  },
+  'adif': {
+    name: 'ADIF Manager',
+    icon: <FileText className="w-4 h-4" />,
+    component: AdifPlugin,
   },
 };
 

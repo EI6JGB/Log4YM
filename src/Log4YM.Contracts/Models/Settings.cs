@@ -58,6 +58,15 @@ public class QrzSettings
 
     [BsonElement("enabled")]
     public bool Enabled { get; set; }
+
+    [BsonElement("apiKey")]
+    public string ApiKey { get; set; } = string.Empty; // QRZ API key for logbook uploads
+
+    [BsonElement("hasXmlSubscription")]
+    public bool? HasXmlSubscription { get; set; } // Cached subscription status
+
+    [BsonElement("subscriptionCheckedAt")]
+    public DateTime? SubscriptionCheckedAt { get; set; }
 }
 
 public class AppearanceSettings

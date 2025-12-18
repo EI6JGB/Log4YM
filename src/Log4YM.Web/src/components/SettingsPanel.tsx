@@ -190,24 +190,45 @@ function StationSettingsSection() {
 
 // QRZ Settings Section
 function QrzSettingsSection() {
-  const { settings, updateQrzSettings, setQrzPassword, getQrzPassword } = useSettingsStore();
+  const { settings, updateQrzSettings, setQrzPassword, getQrzPassword, setQrzApiKey, getQrzApiKey } = useSettingsStore();
   const [showPassword, setShowPassword] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState('');
+  const [hasXmlSubscription, setHasXmlSubscription] = useState<boolean | null>(null);
 
   const qrz = settings.qrz;
   const password = getQrzPassword();
+  const apiKey = getQrzApiKey();
 
   const handleTestConnection = async () => {
     setTestStatus('testing');
-    // Simulate API test (would call backend)
-    setTimeout(() => {
-      if (qrz.username && password) {
+    setTestMessage('');
+    try {
+      const response = await fetch('/api/qrz/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: qrz.username,
+          password: password,
+          apiKey: apiKey,
+          enabled: qrz.enabled,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
         setTestStatus('success');
+        setTestMessage(data.message || 'Connected successfully');
+        setHasXmlSubscription(data.hasXmlSubscription);
       } else {
         setTestStatus('error');
+        setTestMessage(data.message || 'Connection failed');
       }
-      setTimeout(() => setTestStatus('idle'), 3000);
-    }, 1500);
+    } catch {
+      setTestStatus('error');
+      setTestMessage('Failed to connect to server');
+    }
+    setTimeout(() => setTestStatus('idle'), 5000);
   };
 
   return (
@@ -215,7 +236,7 @@ function QrzSettingsSection() {
       <div>
         <h3 className="text-lg font-semibold text-gray-100 mb-1">QRZ.com Integration</h3>
         <p className="text-sm text-gray-500">
-          Configure your QRZ.com credentials for callsign lookups.
+          Configure your QRZ.com credentials for callsign lookups and log uploads.
         </p>
       </div>
 
@@ -239,19 +260,40 @@ function QrzSettingsSection() {
         </button>
       </div>
 
+      {/* Subscription Status */}
+      {hasXmlSubscription !== null && (
+        <div className={`flex items-center gap-2 p-3 rounded-lg border ${
+          hasXmlSubscription
+            ? 'bg-green-500/10 border-green-500/30 text-green-400'
+            : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
+        }`}>
+          {hasXmlSubscription ? (
+            <>
+              <CheckCircle className="w-4 h-4" />
+              <span className="text-sm">XML Subscription active - callsign lookups enabled</span>
+            </>
+          ) : (
+            <>
+              <AlertCircle className="w-4 h-4" />
+              <span className="text-sm">No XML subscription - callsign lookups require a QRZ subscription</span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Credentials */}
       <div className={`space-y-4 ${!qrz.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm font-medium text-gray-300">
             <User className="w-4 h-4 text-accent-primary" />
-            QRZ Username
+            QRZ Username (Callsign)
           </label>
           <input
             type="text"
             value={qrz.username}
-            onChange={(e) => updateQrzSettings({ username: e.target.value })}
-            placeholder="Your QRZ.com username"
-            className="glass-input w-full"
+            onChange={(e) => updateQrzSettings({ username: e.target.value.toUpperCase() })}
+            placeholder="Your QRZ.com callsign"
+            className="glass-input w-full font-mono uppercase"
             disabled={!qrz.enabled}
           />
         </div>
@@ -279,12 +321,52 @@ function QrzSettingsSection() {
             </button>
           </div>
           <p className="text-xs text-gray-600">
-            Credentials are stored with basic obfuscation. For better security, consider using an API key if available.
+            Required for callsign lookups (requires XML subscription on QRZ.com).
           </p>
         </div>
 
+        {/* API Key for Logbook */}
+        <div className="pt-4 border-t border-glass-100">
+          <h4 className="text-sm font-medium text-gray-300 mb-3">QRZ Logbook Integration</h4>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-300">
+              <Key className="w-4 h-4 text-accent-info" />
+              Logbook API Key
+            </label>
+            <div className="relative">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKey}
+                onChange={(e) => setQrzApiKey(e.target.value)}
+                placeholder="Your QRZ Logbook API Key"
+                className="glass-input w-full pr-10 font-mono text-sm"
+                disabled={!qrz.enabled}
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-gray-300"
+              >
+                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-xs text-gray-600">
+              Get your API key from{' '}
+              <a
+                href="https://logbook.qrz.com/logbook"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent-primary hover:underline"
+              >
+                QRZ.com Logbook Settings
+              </a>
+              . Required for uploading QSOs to QRZ.
+            </p>
+          </div>
+        </div>
+
         {/* Test connection */}
-        <div className="pt-2">
+        <div className="pt-4 flex items-center gap-4">
           <button
             onClick={handleTestConnection}
             disabled={!qrz.username || !password || testStatus === 'testing'}
@@ -303,9 +385,14 @@ function QrzSettingsSection() {
                   ? 'Connected!'
                   : testStatus === 'error'
                     ? 'Failed'
-                    : 'Test Connection'}
+                    : 'Test & Save Credentials'}
             </span>
           </button>
+          {testMessage && (
+            <span className={`text-sm ${testStatus === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+              {testMessage}
+            </span>
+          )}
         </div>
       </div>
     </div>

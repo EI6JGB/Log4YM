@@ -52,6 +52,15 @@ builder.Services.AddScoped<ISettingsRepository, SettingsRepository>();
 builder.Services.AddScoped<IQsoService, QsoService>();
 builder.Services.AddScoped<ISpotService, SpotService>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
+builder.Services.AddScoped<IQrzService, QrzService>();
+builder.Services.AddScoped<IAdifService, AdifService>();
+
+// Register HTTP client for external APIs
+builder.Services.AddHttpClient("QRZ", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.Add("User-Agent", "Log4YM/1.0");
+});
 
 // Register event bus
 builder.Services.AddSingleton<IEventBus, EventBus>();
