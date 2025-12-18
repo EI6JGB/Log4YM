@@ -43,6 +43,7 @@ export interface CreateQsoRequest {
   grid?: string;
   country?: string;
   comment?: string;
+  notes?: string;
 }
 
 export interface QsoStatistics {

@@ -23,11 +23,14 @@ export function LogEntryPlugin() {
     band: '20m',
     mode: 'SSB',
     rstSent: '59',
+    rstSentPlus: '',
     rstRcvd: '59',
+    rstRcvdPlus: '',
     frequency: '',
     name: '',
     grid: '',
     comment: '',
+    notes: '',
   });
 
   // Get current radio state
@@ -78,7 +81,10 @@ export function LogEntryPlugin() {
         name: '',
         grid: '',
         comment: '',
+        notes: '',
         frequency: '',
+        rstSentPlus: '',
+        rstRcvdPlus: '',
       });
     },
   });
@@ -96,6 +102,14 @@ export function LogEntryPlugin() {
     e.preventDefault();
     if (!formData.callsign) return;
 
+    // Format RST with plus values if present
+    const rstSent = formData.rstSentPlus
+      ? `${formData.rstSent}+${formData.rstSentPlus}`
+      : formData.rstSent;
+    const rstRcvd = formData.rstRcvdPlus
+      ? `${formData.rstRcvd}+${formData.rstRcvdPlus}`
+      : formData.rstRcvd;
+
     const now = new Date();
     createQso.mutate({
       callsign: formData.callsign,
@@ -104,25 +118,14 @@ export function LogEntryPlugin() {
       band: formData.band,
       mode: formData.mode,
       frequency: formData.frequency ? parseFloat(formData.frequency) : undefined,
-      rstSent: formData.rstSent,
-      rstRcvd: formData.rstRcvd,
+      rstSent,
+      rstRcvd,
       name: formData.name || focusedCallsignInfo?.name,
       grid: formData.grid || focusedCallsignInfo?.grid,
       country: focusedCallsignInfo?.country,
       comment: formData.comment,
+      notes: formData.notes,
     });
-  };
-
-  const getModeClass = (mode: string) => {
-    switch (mode) {
-      case 'CW': return 'badge-cw';
-      case 'SSB': return 'badge-ssb';
-      case 'FT8':
-      case 'FT4': return 'badge-ft8';
-      case 'RTTY':
-      case 'PSK31': return 'badge-rtty';
-      default: return 'bg-dark-600 text-gray-300';
-    }
   };
 
   return (
@@ -154,74 +157,34 @@ export function LogEntryPlugin() {
         </button>
       }
     >
-      <form onSubmit={handleSubmit} className="p-4 space-y-4">
-        {/* Callsign Input */}
-        <div className="space-y-2">
-          <label className="text-sm text-gray-400 flex items-center gap-2">
-            <Search className="w-4 h-4" />
-            Callsign
-          </label>
-          <input
-            type="text"
-            value={formData.callsign}
-            onChange={(e) => handleCallsignChange(e.target.value)}
-            placeholder="Enter callsign..."
-            className="glass-input w-full text-xl font-mono font-bold tracking-wider uppercase"
-            autoFocus
-          />
-        </div>
-
-        {/* Callsign Info Card */}
-        {focusedCallsignInfo && formData.callsign && (
-          <div className="bg-dark-700/50 rounded-lg p-3 border border-glass-100 animate-fade-in">
-            <div className="flex items-start gap-3">
-              {focusedCallsignInfo.imageUrl ? (
-                <img
-                  src={focusedCallsignInfo.imageUrl}
-                  alt={focusedCallsignInfo.callsign}
-                  className="w-12 h-12 rounded-lg object-cover"
-                />
-              ) : (
-                <div className="w-12 h-12 rounded-lg bg-dark-600 flex items-center justify-center">
-                  <User className="w-6 h-6 text-gray-500" />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-100 truncate">
-                  {focusedCallsignInfo.name || 'Unknown'}
-                </p>
-                <div className="flex items-center gap-2 text-sm text-gray-400">
-                  <span className="text-base">{getCountryFlag(focusedCallsignInfo.country) || '🏳️'}</span>
-                  <span className="truncate">{focusedCallsignInfo.country}</span>
-                </div>
-                {focusedCallsignInfo.grid && (
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
-                    <MapPin className="w-3 h-3" />
-                    <span className="font-mono">{focusedCallsignInfo.grid}</span>
-                  </div>
-                )}
-              </div>
-              {/* Large country flag display */}
-              <div className="text-4xl" title={focusedCallsignInfo.country || 'Unknown country'}>
-                {getCountryFlag(focusedCallsignInfo.country, '🇮🇪')}
-              </div>
-            </div>
+      <form onSubmit={handleSubmit} className="p-3 space-y-3">
+        {/* Callsign, Band, Mode on one line */}
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="text-xs text-gray-400 flex items-center gap-1 mb-1">
+              <Search className="w-3 h-3" />
+              Callsign
+            </label>
+            <input
+              type="text"
+              value={formData.callsign}
+              onChange={(e) => handleCallsignChange(e.target.value)}
+              placeholder="Callsign"
+              className="glass-input w-full font-mono font-bold tracking-wider uppercase"
+              autoFocus
+            />
           </div>
-        )}
-
-        {/* Band and Mode */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-sm text-gray-400 flex items-center gap-2">
+          <div className="w-28">
+            <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
               Band
               {followRadio && currentRadioState && (
-                <span className="w-2 h-2 rounded-full bg-accent-success animate-pulse" title="From radio" />
+                <span className="w-1.5 h-1.5 rounded-full bg-accent-success" title="From radio" />
               )}
             </label>
             <select
               value={formData.band}
               onChange={(e) => setFormData(prev => ({ ...prev, band: e.target.value }))}
-              className={`glass-input w-full ${
+              className={`glass-input w-full text-sm ${
                 followRadio && currentRadioState ? 'border-accent-success/30' : ''
               }`}
             >
@@ -230,18 +193,17 @@ export function LogEntryPlugin() {
               ))}
             </select>
           </div>
-
-          <div className="space-y-2">
-            <label className="text-sm text-gray-400 flex items-center gap-2">
+          <div className="w-28">
+            <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
               Mode
               {followRadio && currentRadioState && (
-                <span className="w-2 h-2 rounded-full bg-accent-success animate-pulse" title="From radio" />
+                <span className="w-1.5 h-1.5 rounded-full bg-accent-success" title="From radio" />
               )}
             </label>
             <select
               value={formData.mode}
               onChange={(e) => setFormData(prev => ({ ...prev, mode: e.target.value }))}
-              className={`glass-input w-full ${
+              className={`glass-input w-full text-sm ${
                 followRadio && currentRadioState ? 'border-accent-success/30' : ''
               }`}
             >
@@ -252,70 +214,155 @@ export function LogEntryPlugin() {
           </div>
         </div>
 
-        {/* Mode indicator */}
-        <div className="flex justify-center">
-          <span className={`badge text-lg px-4 py-1 ${getModeClass(formData.mode)}`}>
-            {formData.mode}
-          </span>
-        </div>
+        {/* Callsign Info Card */}
+        {focusedCallsignInfo && formData.callsign && (
+          <div className="bg-dark-700/50 rounded-lg p-2 border border-glass-100 animate-fade-in">
+            <div className="flex items-center gap-2">
+              {focusedCallsignInfo.imageUrl ? (
+                <img
+                  src={focusedCallsignInfo.imageUrl}
+                  alt={focusedCallsignInfo.callsign}
+                  className="w-10 h-10 rounded-lg object-cover"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-lg bg-dark-600 flex items-center justify-center">
+                  <User className="w-5 h-5 text-gray-500" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-100 text-sm truncate">
+                  {focusedCallsignInfo.name || 'Unknown'}
+                </p>
+                <div className="flex items-center gap-2 text-xs text-gray-400">
+                  <span>{getCountryFlag(focusedCallsignInfo.country) || '🏳️'}</span>
+                  <span className="truncate">{focusedCallsignInfo.country}</span>
+                  {focusedCallsignInfo.grid && (
+                    <>
+                      <MapPin className="w-3 h-3" />
+                      <span className="font-mono">{focusedCallsignInfo.grid}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="text-3xl" title={focusedCallsignInfo.country || 'Unknown country'}>
+                {getCountryFlag(focusedCallsignInfo.country, '🇮🇪')}
+              </div>
+            </div>
+          </div>
+        )}
 
-        {/* RST */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-sm text-gray-400">RST Sent</label>
+        {/* Frequency, RST Sent, RST Rcvd on one line */}
+        <div className="flex gap-3 items-end">
+          <div className="w-28">
+            <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+              Freq (kHz)
+              {followRadio && currentRadioState && (
+                <span className="w-1.5 h-1.5 rounded-full bg-accent-success" title="From radio" />
+              )}
+            </label>
             <input
               type="text"
-              value={formData.rstSent}
-              onChange={(e) => setFormData(prev => ({ ...prev, rstSent: e.target.value }))}
-              className="glass-input w-full font-mono text-center"
-              maxLength={3}
+              value={formData.frequency}
+              onChange={(e) => setFormData(prev => ({ ...prev, frequency: e.target.value }))}
+              placeholder="14250"
+              className={`glass-input w-full font-mono text-sm ${
+                followRadio && currentRadioState ? 'border-accent-success/30' : ''
+              }`}
+              readOnly={followRadio && !!currentRadioState}
             />
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm text-gray-400">RST Rcvd</label>
-            <input
-              type="text"
-              value={formData.rstRcvd}
-              onChange={(e) => setFormData(prev => ({ ...prev, rstRcvd: e.target.value }))}
-              className="glass-input w-full font-mono text-center"
-              maxLength={3}
-            />
+          {/* TX RST */}
+          <div>
+            <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+              <span className="text-green-400">TX</span> RST
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                value={formData.rstSent}
+                onChange={(e) => setFormData(prev => ({ ...prev, rstSent: e.target.value }))}
+                className="glass-input w-14 font-mono text-sm"
+                maxLength={3}
+              />
+              {formData.rstSent.endsWith('9') && (
+                <>
+                  <span className="text-gray-500">+</span>
+                  <select
+                    value={formData.rstSentPlus}
+                    onChange={(e) => setFormData(prev => ({ ...prev, rstSentPlus: e.target.value }))}
+                    className="glass-input w-16 font-mono text-sm"
+                  >
+                    <option value="">--</option>
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                    <option value="30">30</option>
+                    <option value="40">40</option>
+                  </select>
+                </>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Frequency */}
-        <div className="space-y-2">
-          <label className="text-sm text-gray-400 flex items-center gap-2">
-            Frequency (kHz)
-            {followRadio && currentRadioState && (
-              <span className="flex items-center gap-1 text-xs text-accent-success">
-                <Link className="w-3 h-3" />
-                Radio
-              </span>
-            )}
-          </label>
-          <input
-            type="text"
-            value={formData.frequency}
-            onChange={(e) => setFormData(prev => ({ ...prev, frequency: e.target.value }))}
-            placeholder="14250"
-            className={`glass-input w-full font-mono ${
-              followRadio && currentRadioState ? 'border-accent-success/30' : ''
-            }`}
-            readOnly={followRadio && !!currentRadioState}
-          />
+          {/* Separator */}
+          <div className="flex items-end pb-2">
+            <span className="text-gray-600 text-lg">/</span>
+          </div>
+
+          {/* RX RST */}
+          <div>
+            <label className="text-xs text-gray-400 mb-1 flex items-center gap-1">
+              <span className="text-blue-400">RX</span> RST
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                value={formData.rstRcvd}
+                onChange={(e) => setFormData(prev => ({ ...prev, rstRcvd: e.target.value }))}
+                className="glass-input w-14 font-mono text-sm"
+                maxLength={3}
+              />
+              {formData.rstRcvd.endsWith('9') && (
+                <>
+                  <span className="text-gray-500">+</span>
+                  <select
+                    value={formData.rstRcvdPlus}
+                    onChange={(e) => setFormData(prev => ({ ...prev, rstRcvdPlus: e.target.value }))}
+                    className="glass-input w-16 font-mono text-sm"
+                  >
+                    <option value="">--</option>
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                    <option value="30">30</option>
+                    <option value="40">40</option>
+                  </select>
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Comment */}
-        <div className="space-y-2">
-          <label className="text-sm text-gray-400">Comment</label>
+        <div>
+          <label className="text-xs text-gray-400 mb-1 block">Comment</label>
           <input
             type="text"
             value={formData.comment}
             onChange={(e) => setFormData(prev => ({ ...prev, comment: e.target.value }))}
-            placeholder="Notes..."
-            className="glass-input w-full"
+            placeholder="QSO comment..."
+            className="glass-input w-full text-sm"
+          />
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className="text-xs text-gray-400 mb-1 block">Notes</label>
+          <input
+            type="text"
+            value={formData.notes}
+            onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+            placeholder="Personal notes..."
+            className="glass-input w-full text-sm"
           />
         </div>
 
@@ -323,7 +370,7 @@ export function LogEntryPlugin() {
         <button
           type="submit"
           disabled={!formData.callsign || createQso.isPending}
-          className="glass-button-success w-full flex items-center justify-center gap-2 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="glass-button-success w-full flex items-center justify-center gap-2 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Send className="w-4 h-4" />
           {createQso.isPending ? 'Logging...' : 'Log QSO'}
