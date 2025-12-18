@@ -504,24 +504,28 @@ internal class PgxlConnection
     {
         _logger.LogDebug("PGXL async status: {Message}", message);
 
-        // Parse meffa from async message - meffa=ACTIVE means operating, meffa=STANDBY means standby
-        var meffaMatch = System.Text.RegularExpressions.Regex.Match(message, @"meffa=(\w+)");
-        if (meffaMatch.Success)
+        // Parse state from async message to detect operating state
+        var stateMatch = System.Text.RegularExpressions.Regex.Match(message, @"state=(\w+)");
+        if (stateMatch.Success)
         {
-            var meffa = meffaMatch.Groups[1].Value;
+            var state = stateMatch.Groups[1].Value;
             var wasOperating = IsOperating;
-            IsOperating = meffa.Equals("ACTIVE", StringComparison.OrdinalIgnoreCase);
+
+            // IDLE or TRANSMIT means we're in operate mode
+            // STANDBY means we're in standby mode
+            IsOperating = !state.Equals("STANDBY", StringComparison.OrdinalIgnoreCase)
+                       && !state.Equals("FAULT", StringComparison.OrdinalIgnoreCase);
+            IsTransmitting = state.StartsWith("TRANSMIT", StringComparison.OrdinalIgnoreCase);
+
             if (wasOperating != IsOperating)
             {
-                _logger.LogInformation("PGXL meffa={Meffa}, IsOperating changed to {IsOperating}", meffa, IsOperating);
+                _logger.LogInformation("PGXL state={State}, IsOperating changed to {IsOperating}", state, IsOperating);
             }
-        }
 
-        // Also handle explicit FAULT state
-        if (message.Contains("state=FAULT", StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogWarning("PGXL entered FAULT state");
-            IsOperating = false;
+            if (state.Equals("FAULT", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("PGXL entered FAULT state");
+            }
         }
     }
 
@@ -533,21 +537,22 @@ internal class PgxlConnection
 
         var values = ParseKeyValuePairs(response);
 
-        // The 'meffa' field indicates the operating mode:
-        //   meffa=ACTIVE  = Amp is in OPERATE mode
-        //   meffa=STANDBY = Amp is in STANDBY mode
-        // Note: vdd only shows voltage during transmit, so we use meffa instead
-        if (values.TryGetValue("meffa", out var meffa))
-        {
-            IsOperating = meffa.Equals("ACTIVE", StringComparison.OrdinalIgnoreCase);
-            _logger.LogDebug("PGXL meffa={Meffa}, IsOperating={IsOperating}", meffa, IsOperating);
-        }
-
-        // Parse state field for transmit status (TRANSMIT_A, TRANSMIT_B = transmitting)
+        // Detect operating mode using the 'state' field:
+        //   state=STANDBY → amp is in standby mode (not operating)
+        //   state=IDLE → amp is in operate mode but not transmitting
+        //   state=TRANSMIT_A/TRANSMIT_B → amp is operating and transmitting
+        //   state=FAULT → amp has a fault condition
+        // Note: vdd (drain voltage) is only non-zero during active transmission,
+        // so it cannot be used to detect operate vs standby mode.
         if (values.TryGetValue("state", out var state))
         {
+            // IDLE or TRANSMIT means we're in operate mode
+            // STANDBY means we're in standby mode
+            IsOperating = !state.Equals("STANDBY", StringComparison.OrdinalIgnoreCase)
+                       && !state.Equals("FAULT", StringComparison.OrdinalIgnoreCase);
             IsTransmitting = state.StartsWith("TRANSMIT", StringComparison.OrdinalIgnoreCase);
-            _logger.LogDebug("PGXL state={State}, IsTransmitting={IsTransmitting}", state, IsTransmitting);
+            _logger.LogDebug("PGXL state={State}, IsOperating={IsOperating}, IsTransmitting={IsTransmitting}",
+                state, IsOperating, IsTransmitting);
         }
 
         // Band

@@ -18,7 +18,7 @@ export default defineConfig({
     }
   },
   build: {
-    outDir: '../Log4YM.Server/wwwroot',
+    outDir: 'dist',
     emptyOutDir: true
   }
 })
