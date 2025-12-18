@@ -1,0 +1,349 @@
+using System.Net;
+using System.Text;
+using System.Xml.Linq;
+using Log4YM.Contracts.Models;
+using Log4YM.Server.Core.Database;
+
+namespace Log4YM.Server.Services;
+
+public class QrzService : IQrzService
+{
+    private readonly ISettingsRepository _settingsRepository;
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<QrzService> _logger;
+
+    private const string QrzXmlApiUrl = "https://xmldata.qrz.com/xml/current/";
+    private const string QrzLogbookApiUrl = "https://logbook.qrz.com/api";
+
+    private string? _sessionKey;
+    private DateTime? _sessionExpiry;
+
+    public QrzService(
+        ISettingsRepository settingsRepository,
+        IHttpClientFactory httpClientFactory,
+        ILogger<QrzService> logger)
+    {
+        _settingsRepository = settingsRepository;
+        _httpClient = httpClientFactory.CreateClient("QRZ");
+        _logger = logger;
+    }
+
+    public async Task<QrzSubscriptionStatus> CheckSubscriptionAsync()
+    {
+        var settings = await _settingsRepository.GetAsync() ?? new UserSettings();
+        var qrz = settings.Qrz;
+
+        if (string.IsNullOrEmpty(qrz.Username) || string.IsNullOrEmpty(qrz.Password))
+        {
+            return new QrzSubscriptionStatus(false, false, null, "QRZ credentials not configured", null);
+        }
+
+        try
+        {
+            var sessionKey = await GetSessionKeyAsync(qrz.Username, qrz.Password);
+            if (sessionKey == null)
+            {
+                return new QrzSubscriptionStatus(false, false, qrz.Username, "Failed to authenticate with QRZ", null);
+            }
+
+            // Session obtained successfully means valid subscription
+            // Update cached status
+            qrz.HasXmlSubscription = true;
+            qrz.SubscriptionCheckedAt = DateTime.UtcNow;
+            await _settingsRepository.UpsertAsync(settings);
+
+            return new QrzSubscriptionStatus(true, true, qrz.Username, "XML subscription active", null);
+        }
+        catch (QrzSubscriptionRequiredException)
+        {
+            qrz.HasXmlSubscription = false;
+            qrz.SubscriptionCheckedAt = DateTime.UtcNow;
+            await _settingsRepository.UpsertAsync(settings);
+
+            return new QrzSubscriptionStatus(true, false, qrz.Username, "XML subscription required for callsign lookups", null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking QRZ subscription");
+            return new QrzSubscriptionStatus(false, false, qrz.Username, $"Error: {ex.Message}", null);
+        }
+    }
+
+    public async Task<QrzUploadResult> UploadQsoAsync(Qso qso)
+    {
+        var settings = await _settingsRepository.GetAsync() ?? new UserSettings();
+        var qrz = settings.Qrz;
+
+        if (string.IsNullOrEmpty(qrz.ApiKey))
+        {
+            return new QrzUploadResult(false, null, "QRZ API key not configured", qso.Id);
+        }
+
+        try
+        {
+            var adif = ConvertQsoToAdif(qso);
+            var result = await UploadAdifToQrzAsync(qrz.ApiKey, adif);
+            return new QrzUploadResult(result.Success, result.LogId, result.Message, qso.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error uploading QSO {QsoId} to QRZ", qso.Id);
+            return new QrzUploadResult(false, null, $"Error: {ex.Message}", qso.Id);
+        }
+    }
+
+    public async Task<QrzBatchUploadResult> UploadQsosAsync(IEnumerable<Qso> qsos)
+    {
+        var qsoList = qsos.ToList();
+        var results = new List<QrzUploadResult>();
+        var successCount = 0;
+        var failedCount = 0;
+
+        foreach (var qso in qsoList)
+        {
+            var result = await UploadQsoAsync(qso);
+            results.Add(result);
+
+            if (result.Success)
+                successCount++;
+            else
+                failedCount++;
+
+            // Small delay to avoid rate limiting
+            await Task.Delay(100);
+        }
+
+        return new QrzBatchUploadResult(qsoList.Count, successCount, failedCount, results);
+    }
+
+    public async Task<QrzCallsignInfo?> LookupCallsignAsync(string callsign)
+    {
+        var settings = await _settingsRepository.GetAsync() ?? new UserSettings();
+        var qrz = settings.Qrz;
+
+        if (string.IsNullOrEmpty(qrz.Username) || string.IsNullOrEmpty(qrz.Password))
+        {
+            _logger.LogWarning("QRZ credentials not configured for callsign lookup");
+            return null;
+        }
+
+        try
+        {
+            var sessionKey = await GetSessionKeyAsync(qrz.Username, qrz.Password);
+            if (sessionKey == null)
+            {
+                _logger.LogWarning("Failed to get QRZ session for callsign lookup");
+                return null;
+            }
+
+            var url = $"{QrzXmlApiUrl}?s={sessionKey}&callsign={Uri.EscapeDataString(callsign)}";
+            var response = await _httpClient.GetStringAsync(url);
+            var doc = XDocument.Parse(response);
+
+            var callsignElement = doc.Descendants("Callsign").FirstOrDefault();
+            if (callsignElement == null)
+            {
+                return null;
+            }
+
+            return new QrzCallsignInfo(
+                Callsign: GetElementValue(callsignElement, "call") ?? callsign,
+                Name: GetElementValue(callsignElement, "name"),
+                FirstName: GetElementValue(callsignElement, "fname"),
+                Address: GetElementValue(callsignElement, "addr1"),
+                City: GetElementValue(callsignElement, "addr2"),
+                State: GetElementValue(callsignElement, "state"),
+                Country: GetElementValue(callsignElement, "country"),
+                Grid: GetElementValue(callsignElement, "grid"),
+                Latitude: ParseDouble(GetElementValue(callsignElement, "lat")),
+                Longitude: ParseDouble(GetElementValue(callsignElement, "lon")),
+                Dxcc: ParseInt(GetElementValue(callsignElement, "dxcc")),
+                CqZone: ParseInt(GetElementValue(callsignElement, "cqzone")),
+                ItuZone: ParseInt(GetElementValue(callsignElement, "ituzone")),
+                Email: GetElementValue(callsignElement, "email"),
+                QslManager: GetElementValue(callsignElement, "qslmgr"),
+                ImageUrl: GetElementValue(callsignElement, "image"),
+                LicenseExpiration: ParseDate(GetElementValue(callsignElement, "expdate"))
+            );
+        }
+        catch (QrzSubscriptionRequiredException)
+        {
+            _logger.LogWarning("QRZ XML subscription required for callsign lookup");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error looking up callsign {Callsign} on QRZ", callsign);
+            return null;
+        }
+    }
+
+    private async Task<string?> GetSessionKeyAsync(string username, string password)
+    {
+        // Return cached session if valid
+        if (_sessionKey != null && _sessionExpiry > DateTime.UtcNow)
+        {
+            return _sessionKey;
+        }
+
+        var url = $"{QrzXmlApiUrl}?username={Uri.EscapeDataString(username)}&password={Uri.EscapeDataString(password)}&agent=Log4YM";
+        var response = await _httpClient.GetStringAsync(url);
+        var doc = XDocument.Parse(response);
+
+        var session = doc.Descendants("Session").FirstOrDefault();
+        if (session == null)
+        {
+            return null;
+        }
+
+        var error = GetElementValue(session, "Error");
+        if (!string.IsNullOrEmpty(error))
+        {
+            if (error.Contains("subscription", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new QrzSubscriptionRequiredException(error);
+            }
+            _logger.LogWarning("QRZ login error: {Error}", error);
+            return null;
+        }
+
+        _sessionKey = GetElementValue(session, "Key");
+        // Sessions typically last 24 hours, but we'll refresh more often
+        _sessionExpiry = DateTime.UtcNow.AddHours(1);
+
+        return _sessionKey;
+    }
+
+    private async Task<(bool Success, string? LogId, string? Message)> UploadAdifToQrzAsync(string apiKey, string adif)
+    {
+        var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("KEY", apiKey),
+            new KeyValuePair<string, string>("ACTION", "INSERT"),
+            new KeyValuePair<string, string>("ADIF", adif)
+        });
+
+        var response = await _httpClient.PostAsync(QrzLogbookApiUrl, content);
+        var responseText = await response.Content.ReadAsStringAsync();
+
+        _logger.LogDebug("QRZ logbook response: {Response}", responseText);
+
+        // Parse response - format is: RESULT=OK&LOGID=12345 or RESULT=FAIL&REASON=message
+        var parts = responseText.Split('&')
+            .Select(p => p.Split('='))
+            .Where(p => p.Length == 2)
+            .ToDictionary(p => p[0], p => WebUtility.UrlDecode(p[1]));
+
+        if (parts.TryGetValue("RESULT", out var result) && result == "OK")
+        {
+            parts.TryGetValue("LOGID", out var logId);
+            return (true, logId, "QSO uploaded successfully");
+        }
+
+        parts.TryGetValue("REASON", out var reason);
+        return (false, null, reason ?? "Unknown error");
+    }
+
+    private static string ConvertQsoToAdif(Qso qso)
+    {
+        var sb = new StringBuilder();
+
+        // Required fields
+        AppendAdifField(sb, "CALL", qso.Callsign);
+        AppendAdifField(sb, "QSO_DATE", qso.QsoDate.ToString("yyyyMMdd"));
+        AppendAdifField(sb, "TIME_ON", qso.TimeOn.Replace(":", ""));
+        AppendAdifField(sb, "BAND", qso.Band);
+        AppendAdifField(sb, "MODE", qso.Mode);
+
+        // Optional fields
+        if (qso.Frequency.HasValue)
+            AppendAdifField(sb, "FREQ", qso.Frequency.Value.ToString("F6"));
+
+        if (!string.IsNullOrEmpty(qso.TimeOff))
+            AppendAdifField(sb, "TIME_OFF", qso.TimeOff.Replace(":", ""));
+
+        if (!string.IsNullOrEmpty(qso.RstSent))
+            AppendAdifField(sb, "RST_SENT", qso.RstSent);
+
+        if (!string.IsNullOrEmpty(qso.RstRcvd))
+            AppendAdifField(sb, "RST_RCVD", qso.RstRcvd);
+
+        if (!string.IsNullOrEmpty(qso.Name) || !string.IsNullOrEmpty(qso.Station?.Name))
+            AppendAdifField(sb, "NAME", qso.Name ?? qso.Station?.Name);
+
+        if (!string.IsNullOrEmpty(qso.Grid) || !string.IsNullOrEmpty(qso.Station?.Grid))
+            AppendAdifField(sb, "GRIDSQUARE", qso.Grid ?? qso.Station?.Grid);
+
+        if (!string.IsNullOrEmpty(qso.Country) || !string.IsNullOrEmpty(qso.Station?.Country))
+            AppendAdifField(sb, "COUNTRY", qso.Country ?? qso.Station?.Country);
+
+        if (qso.Dxcc.HasValue || qso.Station?.Dxcc.HasValue == true)
+            AppendAdifField(sb, "DXCC", (qso.Dxcc ?? qso.Station?.Dxcc)?.ToString());
+
+        if (!string.IsNullOrEmpty(qso.Continent) || !string.IsNullOrEmpty(qso.Station?.Continent))
+            AppendAdifField(sb, "CONT", qso.Continent ?? qso.Station?.Continent);
+
+        if (!string.IsNullOrEmpty(qso.Comment))
+            AppendAdifField(sb, "COMMENT", qso.Comment);
+
+        if (!string.IsNullOrEmpty(qso.Notes))
+            AppendAdifField(sb, "NOTES", qso.Notes);
+
+        if (qso.Station?.CqZone.HasValue == true)
+            AppendAdifField(sb, "CQZ", qso.Station.CqZone.ToString());
+
+        if (qso.Station?.ItuZone.HasValue == true)
+            AppendAdifField(sb, "ITUZ", qso.Station.ItuZone.ToString());
+
+        if (qso.Station?.State != null)
+            AppendAdifField(sb, "STATE", qso.Station.State);
+
+        // Contest fields
+        if (qso.Contest != null)
+        {
+            if (!string.IsNullOrEmpty(qso.Contest.ContestId))
+                AppendAdifField(sb, "CONTEST_ID", qso.Contest.ContestId);
+            if (!string.IsNullOrEmpty(qso.Contest.SerialSent))
+                AppendAdifField(sb, "STX", qso.Contest.SerialSent);
+            if (!string.IsNullOrEmpty(qso.Contest.SerialRcvd))
+                AppendAdifField(sb, "SRX", qso.Contest.SerialRcvd);
+            if (!string.IsNullOrEmpty(qso.Contest.Exchange))
+                AppendAdifField(sb, "SRX_STRING", qso.Contest.Exchange);
+        }
+
+        sb.Append("<EOR>");
+        return sb.ToString();
+    }
+
+    private static void AppendAdifField(StringBuilder sb, string fieldName, string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return;
+        sb.Append($"<{fieldName}:{value.Length}>{value}");
+    }
+
+    private static string? GetElementValue(XElement parent, string name)
+    {
+        return parent.Element(name)?.Value;
+    }
+
+    private static double? ParseDouble(string? value)
+    {
+        return double.TryParse(value, out var result) ? result : null;
+    }
+
+    private static int? ParseInt(string? value)
+    {
+        return int.TryParse(value, out var result) ? result : null;
+    }
+
+    private static DateTime? ParseDate(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        return DateTime.TryParse(value, out var result) ? result : null;
+    }
+}
+
+public class QrzSubscriptionRequiredException : Exception
+{
+    public QrzSubscriptionRequiredException(string message) : base(message) { }
+}

@@ -30,6 +30,7 @@ export interface StationSettings {
 export interface QrzSettings {
   username: string;
   password: string; // Stored obfuscated
+  apiKey: string; // Stored obfuscated - for QRZ logbook uploads
   enabled: boolean;
 }
 
@@ -85,6 +86,8 @@ interface SettingsState {
   // QRZ credentials with obfuscation
   setQrzPassword: (password: string) => void;
   getQrzPassword: () => string;
+  setQrzApiKey: (apiKey: string) => void;
+  getQrzApiKey: () => string;
 
   // Persistence
   saveSettings: () => Promise<void>;
@@ -105,6 +108,7 @@ const defaultSettings: Settings = {
   qrz: {
     username: '',
     password: '',
+    apiKey: '',
     enabled: false,
   },
   appearance: {
@@ -199,6 +203,18 @@ export const useSettingsStore = create<SettingsState>()(
         })),
 
       getQrzPassword: () => deobfuscate(get().settings.qrz.password),
+
+      // QRZ API key with obfuscation
+      setQrzApiKey: (apiKey) =>
+        set((state) => ({
+          settings: {
+            ...state.settings,
+            qrz: { ...state.settings.qrz, apiKey: obfuscate(apiKey) },
+          },
+          isDirty: true,
+        })),
+
+      getQrzApiKey: () => deobfuscate(get().settings.qrz.apiKey),
 
       // Save to backend (MongoDB via API)
       saveSettings: async () => {

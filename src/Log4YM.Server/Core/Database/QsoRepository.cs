@@ -14,6 +14,8 @@ public interface IQsoRepository
     Task<bool> DeleteAsync(string id);
     Task<QsoStatistics> GetStatisticsAsync();
     Task<int> GetCountAsync();
+    Task<bool> ExistsAsync(string callsign, DateTime qsoDate, string timeOn, string band, string mode);
+    Task<IEnumerable<Qso>> GetByIdsAsync(IEnumerable<string> ids);
 }
 
 public class QsoRepository : IQsoRepository
@@ -140,5 +142,25 @@ public class QsoRepository : IQsoRepository
     public async Task<int> GetCountAsync()
     {
         return (int)await _collection.CountDocumentsAsync(_ => true);
+    }
+
+    public async Task<bool> ExistsAsync(string callsign, DateTime qsoDate, string timeOn, string band, string mode)
+    {
+        var builder = Builders<Qso>.Filter;
+        var filter = builder.Eq(q => q.Callsign, callsign.ToUpperInvariant())
+            & builder.Eq(q => q.QsoDate, qsoDate.Date)
+            & builder.Eq(q => q.TimeOn, timeOn)
+            & builder.Eq(q => q.Band, band)
+            & builder.Eq(q => q.Mode, mode);
+
+        var count = await _collection.CountDocumentsAsync(filter);
+        return count > 0;
+    }
+
+    public async Task<IEnumerable<Qso>> GetByIdsAsync(IEnumerable<string> ids)
+    {
+        var idList = ids.ToList();
+        var filter = Builders<Qso>.Filter.In(q => q.Id, idList);
+        return await _collection.Find(filter).ToListAsync();
     }
 }
