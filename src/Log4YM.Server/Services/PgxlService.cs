@@ -555,10 +555,10 @@ internal class PgxlConnection
                 state, IsOperating, IsTransmitting);
         }
 
-        // Band
-        if (values.TryGetValue("band", out var band))
+        // Band - PGXL sends bandA and bandB, we use bandA for primary display
+        if (values.TryGetValue("bandA", out var bandA))
         {
-            Band = FormatBand(band);
+            Band = FormatBand(bandA);
         }
 
         // Meters
@@ -613,20 +613,21 @@ internal class PgxlConnection
 
     private static string FormatBand(string bandCode)
     {
-        return bandCode.ToUpper() switch
+        return bandCode switch
         {
-            "160" => "160m",
-            "80" => "80m",
-            "60" => "60m",
-            "40" => "40m",
-            "30" => "30m",
-            "20" => "20m",
-            "17" => "17m",
-            "15" => "15m",
-            "12" => "12m",
-            "10" => "10m",
+            "0" => "N/A",
             "6" => "6m",
-            _ => bandCode
+            "10" => "10m",
+            "12" => "12m",
+            "15" => "15m",
+            "17" => "17m",
+            "20" => "20m",
+            "30" => "30m",
+            "40" => "40m",
+            "60" => "60m",
+            "80" => "80m",
+            "160" => "160m",
+            _ => $"{bandCode}m"  // Default: append 'm' for any other band value
         };
     }
 
