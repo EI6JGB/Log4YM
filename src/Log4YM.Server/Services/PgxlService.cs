@@ -15,8 +15,10 @@ public class PgxlService : BackgroundService
     private readonly IHubContext<LogHub, ILogHubClient> _hubContext;
     private readonly ConcurrentDictionary<string, PgxlConnection> _connections = new();
 
-    // PGXL discovery on port 9008 (like Antenna Genius on 9007)
+    // PGXL uses port 9008 for both UDP discovery and TCP control
+    // (similar to Antenna Genius on port 9007)
     private const int DiscoveryPort = 9008;
+    private const int ControlPort = 9008;
     private const int KeepAliveIntervalMs = 30000;
 
     public PgxlService(
@@ -115,7 +117,8 @@ public class PgxlService : BackgroundService
                 serial = $"pgxl-{ip.Replace(".", "-")}";
             }
 
-            return new PgxlDiscoveredEvent(ip, port, serial, model);
+            // Use ControlPort for TCP, not the discovery port
+            return new PgxlDiscoveredEvent(ip, ControlPort, serial, model);
         }
         catch (Exception ex)
         {
@@ -224,6 +227,7 @@ internal class PgxlConnection
 
     private TcpClient? _tcpClient;
     private NetworkStream? _stream;
+    private StreamReader? _reader;
     private int _sequenceNumber = 0;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly ConcurrentDictionary<int, TaskCompletionSource<string>> _pendingCommands = new();
@@ -255,7 +259,7 @@ internal class PgxlConnection
     private bool _overCurrent;
     private string _nickname = "";
 
-    private const string Terminator = "\r";
+    private const string Terminator = "\r\n";
 
     public PgxlConnection(PgxlDiscoveredEvent device, ILogger logger, IHubContext<LogHub, ILogHubClient> hubContext)
     {
@@ -281,6 +285,7 @@ internal class PgxlConnection
                 _tcpClient = new TcpClient();
                 await _tcpClient.ConnectAsync(_device.IpAddress, _device.Port, ct);
                 _stream = _tcpClient.GetStream();
+                _reader = new StreamReader(_stream, Encoding.ASCII);
 
                 _logger.LogInformation("Connected to PGXL at {Ip}:{Port}", _device.IpAddress, _device.Port);
 
@@ -328,12 +333,11 @@ internal class PgxlConnection
 
     private async Task ReadPrologueAsync(CancellationToken ct)
     {
-        // Read version line: V<a.b.c> [AUTH]
-        var buffer = new byte[256];
-        var bytesRead = await _stream!.ReadAsync(buffer, ct);
-        var prologue = Encoding.ASCII.GetString(buffer, 0, bytesRead).Trim();
+        // Read version line: V<a.b.c> [AUTH] or V<a.b.c> PGXL
+        var prologue = await _reader!.ReadLineAsync(ct);
+        _logger.LogInformation("PGXL prologue: '{Prologue}'", prologue);
 
-        if (prologue.StartsWith("V"))
+        if (prologue != null && prologue.StartsWith("V"))
         {
             var parts = prologue.Split(' ');
             FirmwareVersion = parts[0].Substring(1);
@@ -435,37 +439,21 @@ internal class PgxlConnection
     private async Task ReceiveLoopAsync(CancellationToken ct)
     {
         _logger.LogInformation("PGXL receive loop starting for {Serial}", _device.Serial);
-        var buffer = new StringBuilder();
 
         while (!ct.IsCancellationRequested && _tcpClient?.Connected == true)
         {
             try
             {
-                var readBuffer = new byte[1024];
-                var bytesRead = await _stream!.ReadAsync(readBuffer, ct);
-
-                if (bytesRead == 0)
+                var line = await _reader!.ReadLineAsync(ct);
+                if (line == null)
                 {
                     _logger.LogWarning("PGXL connection closed");
                     break;
                 }
 
-                var data = Encoding.ASCII.GetString(readBuffer, 0, bytesRead);
-                _logger.LogDebug("PGXL raw recv ({Bytes} bytes): {Data}", bytesRead, data.Replace("\r", "\\r").Replace("\n", "\\n"));
-                buffer.Append(data);
-
-                // Process complete lines
-                string bufferStr;
-                int newlineIndex;
-                while ((newlineIndex = (bufferStr = buffer.ToString()).IndexOf('\r')) >= 0)
+                if (!string.IsNullOrWhiteSpace(line))
                 {
-                    var line = bufferStr.Substring(0, newlineIndex);
-                    buffer.Remove(0, newlineIndex + 1);
-
-                    if (!string.IsNullOrWhiteSpace(line))
-                    {
-                        ProcessLine(line);
-                    }
+                    ProcessLine(line);
                 }
             }
             catch (OperationCanceledException)
@@ -515,19 +503,34 @@ internal class PgxlConnection
     {
         _logger.LogDebug("PGXL async status: {Message}", message);
 
-        // Parse state changes
-        if (message.Contains("state=OPERATE") || message.Contains("state=OPER"))
+        // PGXL state meanings:
+        //   IDLE = In operate mode but not transmitting (operating)
+        //   STANDBY = In standby mode (not operating)
+        //   TRANSMIT = Actively transmitting (operating)
+        //   OPERATE = In operate mode (operating)
+        //   FAULT = Fault condition (not operating)
+        if (message.Contains("state=IDLE", StringComparison.OrdinalIgnoreCase))
         {
+            _logger.LogInformation("PGXL state: IDLE (operating, not transmitting)");
             IsOperating = true;
         }
-        else if (message.Contains("state=STANDBY") || message.Contains("state=STBY"))
+        else if (message.Contains("state=OPERATE", StringComparison.OrdinalIgnoreCase) ||
+                 message.Contains("state=TRANSMIT", StringComparison.OrdinalIgnoreCase) ||
+                 message.Contains("state=TX", StringComparison.OrdinalIgnoreCase))
         {
+            _logger.LogInformation("PGXL state changed to OPERATE/TRANSMIT");
+            IsOperating = true;
+        }
+        else if (message.Contains("state=STANDBY", StringComparison.OrdinalIgnoreCase) ||
+                 message.Contains("state=STBY", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("PGXL state changed to STANDBY");
             IsOperating = false;
         }
-        else if (message.Contains("state=FAULT"))
+        else if (message.Contains("state=FAULT", StringComparison.OrdinalIgnoreCase))
         {
+            _logger.LogWarning("PGXL entered FAULT state");
             IsOperating = false;
-            // Could parse fault type here
         }
     }
 
@@ -537,13 +540,27 @@ internal class PgxlConnection
 
         _logger.LogDebug("Parsing status response: {Response}", response);
 
-        // Status response format: state=STANDBY|OPERATE fwd=X.X rl=X.X drv=X.X id=X.X temp=X.X band=XX ...
+        // Status response format varies by firmware:
+        // state=STANDBY|OPERATE|OPERATING|STBY|FAULT|IDLE|TRANSMIT
+        // PGXL state meanings:
+        //   IDLE = Amp is in OPERATE mode, ready but not transmitting
+        //   STANDBY = Amp is in STANDBY mode
+        //   TRANSMIT = Amp is actively transmitting
+        //   OPERATE = Amp is in operate mode
+        //   FAULT = Amp has a fault
         var values = ParseKeyValuePairs(response);
 
-        // State
-        var state = values.GetValueOrDefault("state", "");
-        IsOperating = state.Equals("OPERATE", StringComparison.OrdinalIgnoreCase) ||
-                      state.Equals("OPER", StringComparison.OrdinalIgnoreCase);
+        // Check 'state' field - the primary indicator of operating state
+        if (values.TryGetValue("state", out var state))
+        {
+            // IDLE means "in operate mode but idle" (not transmitting), so it's operating
+            // STANDBY/STBY means actually in standby mode
+            IsOperating = state.Equals("IDLE", StringComparison.OrdinalIgnoreCase) ||
+                          state.Equals("OPERATE", StringComparison.OrdinalIgnoreCase) ||
+                          state.Equals("TRANSMIT", StringComparison.OrdinalIgnoreCase) ||
+                          state.Equals("TX", StringComparison.OrdinalIgnoreCase);
+            _logger.LogDebug("PGXL state={State}, IsOperating={IsOperating}", state, IsOperating);
+        }
 
         // Band
         if (values.TryGetValue("band", out var band))
@@ -621,13 +638,17 @@ internal class PgxlConnection
     public async Task SetOperateAsync()
     {
         _logger.LogInformation("Setting PGXL {Serial} to OPERATE mode", _device.Serial);
-        await SendCommandAsync("operate");
+        // PGXL protocol: 'operate=1' enables operate mode
+        var response = await SendCommandAsync("operate=1");
+        _logger.LogInformation("PGXL operate response: '{Response}'", response);
     }
 
     public async Task SetStandbyAsync()
     {
         _logger.LogInformation("Setting PGXL {Serial} to STANDBY mode", _device.Serial);
-        await SendCommandAsync("standby");
+        // PGXL protocol: 'operate=0' sets standby/idle mode
+        var response = await SendCommandAsync("operate=0");
+        _logger.LogInformation("PGXL standby response: '{Response}'", response);
     }
 
     public async Task SendPingAsync()
@@ -704,11 +725,13 @@ internal class PgxlConnection
     {
         try
         {
+            _reader?.Close();
             _stream?.Close();
             _tcpClient?.Close();
         }
         catch { }
 
+        _reader = null;
         _stream = null;
         _tcpClient = null;
     }

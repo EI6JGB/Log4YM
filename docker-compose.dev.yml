@@ -1,14 +1,23 @@
-version: '3.8'
-
 services:
-  log4ym:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - log4ym-network
+
+  backend:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    ports:
-      - "5001:5000"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5000
       - MongoDB__ConnectionString=mongodb://mongodb:27017
       - MongoDB__DatabaseName=log4ym_dev
     volumes:
@@ -18,20 +27,24 @@ services:
       - mongodb
     networks:
       - log4ym-network
+    # Expose for debugging but not required for nginx proxy
+    expose:
+      - "5000"
 
   frontend:
     image: node:20-alpine
     working_dir: /app
-    ports:
-      - "5173:5173"
     environment:
-      - VITE_API_URL=http://localhost:5001
+      - VITE_API_URL=http://localhost:8080
     volumes:
       - ./src/Log4YM.Web:/app
       - /app/node_modules
     command: sh -c "npm install && npm run dev -- --host"
     networks:
       - log4ym-network
+    # Expose for debugging but not required for nginx proxy
+    expose:
+      - "5173"
 
   mongodb:
     image: mongo:7
