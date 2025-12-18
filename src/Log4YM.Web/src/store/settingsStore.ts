@@ -39,12 +39,18 @@ export interface AppearanceSettings {
   compactMode: boolean;
 }
 
+export interface RotatorPreset {
+  name: string;
+  azimuth: number;
+}
+
 export interface RotatorSettings {
   enabled: boolean;
   ipAddress: string;
   port: number;
   pollingIntervalMs: number;
   rotatorId: string;
+  presets: RotatorPreset[];
 }
 
 export interface RadioSettings {
@@ -121,6 +127,12 @@ const defaultSettings: Settings = {
     port: 4533,
     pollingIntervalMs: 500,
     rotatorId: 'default',
+    presets: [
+      { name: 'N', azimuth: 0 },
+      { name: 'E', azimuth: 90 },
+      { name: 'S', azimuth: 180 },
+      { name: 'W', azimuth: 270 },
+    ],
   },
   radio: {
     followRadio: true,

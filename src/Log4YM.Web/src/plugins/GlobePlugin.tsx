@@ -410,24 +410,6 @@ export function GlobePlugin() {
           </div>
         )}
 
-        {/* Quick bearing buttons */}
-        <div className="absolute bottom-4 right-4 flex gap-2">
-          {[0, 90, 180, 270].map((deg) => (
-            <button
-              key={deg}
-              onClick={() => {
-                lastCommandTimeRef.current = Date.now();
-                commandedAzimuthRef.current = deg;
-                displayedAzimuthRef.current = deg;
-                setCurrentAzimuth(deg);
-                commandRotator(deg, 'globe');
-              }}
-              className="glass-button px-2 py-1 text-xs font-mono"
-            >
-              {deg}°
-            </button>
-          ))}
-        </div>
       </div>
     </GlassPanel>
   );

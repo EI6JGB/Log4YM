@@ -1,15 +1,26 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Compass, Navigation, Target, RotateCw, Maximize2 } from 'lucide-react';
+import { Compass, Navigation, Target, RotateCw, Maximize2, Settings, X } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { useSignalR } from '../hooks/useSignalR';
 import { GlassPanel } from '../components/GlassPanel';
+import { useSettingsStore, RotatorPreset } from '../store/settingsStore';
 
 export function RotatorPlugin() {
   const { rotatorPosition, focusedCallsignInfo } = useAppStore();
   const { commandRotator } = useSignalR();
+  const { settings, updateRotatorSettings } = useSettingsStore();
   const [targetAzimuth, setTargetAzimuth] = useState('');
   const [isRotating, setIsRotating] = useState(false);
   const [displayAzimuth, setDisplayAzimuth] = useState(0);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Get presets from settings, with fallback to defaults
+  const presets = settings.rotator.presets || [
+    { name: 'N', azimuth: 0 },
+    { name: 'E', azimuth: 90 },
+    { name: 'S', azimuth: 180 },
+    { name: 'W', azimuth: 270 },
+  ];
 
   // Track commanded azimuth and time to prevent flip to 0
   const lastCommandTimeRef = useRef<number>(0);
@@ -206,9 +217,18 @@ export function RotatorPlugin() {
       title="Rotator"
       icon={<Compass className="w-5 h-5" />}
       actions={
-        <button className="glass-button p-1.5" title="Fullscreen">
-          <Maximize2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            className="glass-button p-1.5"
+            title="Preset Settings"
+            onClick={() => setShowSettings(true)}
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          <button className="glass-button p-1.5" title="Fullscreen">
+            <Maximize2 className="w-4 h-4" />
+          </button>
+        </div>
       }
     >
       <div className="p-4 space-y-4">
@@ -298,18 +318,22 @@ export function RotatorPlugin() {
             </div>
           </div>
 
-          {/* Quick presets */}
+          {/* Configurable presets */}
           <div className="flex gap-2">
-            {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+            {presets.map((preset, index) => (
               <button
-                key={deg}
-                onClick={() => handleQuickRotate(deg)}
+                key={index}
+                onClick={() => handleQuickRotate(preset.azimuth)}
                 disabled={isRotating}
-                className={`glass-button flex-1 text-xs py-2 font-mono ${
-                  Math.abs(currentAzimuth - deg) < 5 ? 'border-accent-primary text-accent-primary' : ''
+                className={`glass-button flex-1 text-xs py-2 ${
+                  Math.abs(currentAzimuth - preset.azimuth) < 5 ? 'border-accent-primary text-accent-primary' : ''
                 }`}
+                title={`${preset.azimuth}°`}
               >
-                {deg}°
+                <div className="flex flex-col items-center gap-0.5">
+                  <span className="font-medium">{preset.name}</span>
+                  <span className="font-mono text-[10px] opacity-60">{preset.azimuth}°</span>
+                </div>
               </button>
             ))}
           </div>
@@ -326,6 +350,133 @@ export function RotatorPlugin() {
           </div>
         </div>
       </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <RotatorSettingsModal
+          presets={presets}
+          onSave={(newPresets) => {
+            updateRotatorSettings({ presets: newPresets });
+            setShowSettings(false);
+          }}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </GlassPanel>
+  );
+}
+
+// Settings Modal Component
+interface RotatorSettingsModalProps {
+  presets: RotatorPreset[];
+  onSave: (presets: RotatorPreset[]) => void;
+  onClose: () => void;
+}
+
+function RotatorSettingsModal({ presets, onSave, onClose }: RotatorSettingsModalProps) {
+  const [editedPresets, setEditedPresets] = useState<RotatorPreset[]>(presets);
+
+  const handlePresetChange = (index: number, field: 'name' | 'azimuth', value: string) => {
+    const newPresets = [...editedPresets];
+    if (field === 'name') {
+      newPresets[index] = { ...newPresets[index], name: value };
+    } else {
+      const azimuth = parseInt(value, 10);
+      if (!isNaN(azimuth) && azimuth >= 0 && azimuth <= 360) {
+        newPresets[index] = { ...newPresets[index], azimuth };
+      }
+    }
+    setEditedPresets(newPresets);
+  };
+
+  const handleReset = () => {
+    setEditedPresets([
+      { name: 'N', azimuth: 0 },
+      { name: 'E', azimuth: 90 },
+      { name: 'S', azimuth: 180 },
+      { name: 'W', azimuth: 270 },
+    ]);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-dark-800 rounded-xl border border-glass-100 shadow-2xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-glass-100">
+          <h3 className="text-lg font-semibold text-gray-200">Rotator Presets</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-200 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <p className="text-sm text-gray-400">
+            Configure quick-access heading presets. Examples: N (0°), VK LP (240°), JA SP (30°)
+          </p>
+
+          <div className="space-y-3">
+            {editedPresets.map((preset, index) => (
+              <div key={index} className="flex items-center gap-3">
+                <span className="text-sm text-gray-500 w-6">{index + 1}.</span>
+                <input
+                  type="text"
+                  value={preset.name}
+                  onChange={(e) => handlePresetChange(index, 'name', e.target.value)}
+                  placeholder="Name"
+                  maxLength={12}
+                  className="glass-input flex-1 text-sm"
+                />
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    value={preset.azimuth}
+                    onChange={(e) => handlePresetChange(index, 'azimuth', e.target.value)}
+                    min="0"
+                    max="360"
+                    className="glass-input w-20 text-sm font-mono text-center"
+                  />
+                  <span className="text-gray-500 text-sm">°</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-xs text-gray-500 pt-2 border-t border-glass-50">
+            <p className="font-medium mb-1">Example configurations:</p>
+            <ul className="space-y-0.5 list-disc list-inside">
+              <li>NA (290°) - North America</li>
+              <li>VK LP (240°) - VK Long Path</li>
+              <li>VK SP (60°) - VK Short Path</li>
+              <li>JA SP (30°) - Japan Short Path</li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="flex justify-between gap-2 px-4 py-3 border-t border-glass-100">
+          <button
+            onClick={handleReset}
+            className="px-3 py-2 text-sm font-medium text-gray-400 hover:text-gray-200 transition-colors"
+          >
+            Reset to N/E/S/W
+          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium bg-dark-700 text-gray-300 rounded-lg hover:bg-dark-600 transition-all border border-glass-100"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onSave(editedPresets)}
+              className="px-4 py-2 text-sm font-medium bg-accent-primary text-white rounded-lg hover:bg-accent-primary/80 transition-all"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
