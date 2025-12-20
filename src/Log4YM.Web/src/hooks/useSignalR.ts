@@ -26,6 +26,7 @@ export function useSignalR() {
     updateSmartUnlinkRadio,
     removeSmartUnlinkRadio,
     setSmartUnlinkRadios,
+    setQrzSyncProgress,
   } = useAppStore();
 
   useEffect(() => {
@@ -130,6 +131,11 @@ export function useSignalR() {
             console.log('SmartUnlink status:', evt.radios.length, 'radios');
             setSmartUnlinkRadios(evt.radios);
           },
+          // QRZ Sync handler
+          onQrzSyncProgress: (evt) => {
+            console.log('QRZ sync progress:', evt.completed, '/', evt.total);
+            setQrzSyncProgress(evt);
+          },
         });
 
         await signalRService.connect();
@@ -159,7 +165,7 @@ export function useSignalR() {
       signalRService.disconnect();
       setConnected(false);
     };
-  }, [queryClient, setConnected, setFocusedCallsign, setFocusedCallsignInfo, setRotatorPosition, setRigStatus, setAntennaGeniusStatus, updateAntennaGeniusPort, removeAntennaGeniusDevice, setPgxlStatus, removePgxlDevice, addDiscoveredRadio, removeDiscoveredRadio, setRadioConnectionState, setRadioState, setRadioSlices, addSmartUnlinkRadio, updateSmartUnlinkRadio, removeSmartUnlinkRadio, setSmartUnlinkRadios]);
+  }, [queryClient, setConnected, setFocusedCallsign, setFocusedCallsignInfo, setLookingUpCallsign, setRotatorPosition, setRigStatus, setAntennaGeniusStatus, updateAntennaGeniusPort, removeAntennaGeniusDevice, setPgxlStatus, removePgxlDevice, addDiscoveredRadio, removeDiscoveredRadio, setRadioConnectionState, setRadioState, setRadioSlices, addSmartUnlinkRadio, updateSmartUnlinkRadio, removeSmartUnlinkRadio, setSmartUnlinkRadios, setQrzSyncProgress]);
 
   const focusCallsign = useCallback(async (callsign: string, source: string) => {
     setFocusedCallsign(callsign);

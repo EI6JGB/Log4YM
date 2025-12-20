@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Log4YM.Contracts.Api;
+using Log4YM.Contracts.Events;
 using Log4YM.Contracts.Models;
 using Log4YM.Server.Services;
 using Log4YM.Server.Core.Database;
+using Log4YM.Server.Hubs;
 
 namespace Log4YM.Server.Controllers;
 
@@ -14,17 +17,20 @@ public class QrzController : ControllerBase
     private readonly IQrzService _qrzService;
     private readonly IQsoRepository _qsoRepository;
     private readonly ISettingsRepository _settingsRepository;
+    private readonly IHubContext<LogHub, ILogHubClient> _hubContext;
     private readonly ILogger<QrzController> _logger;
 
     public QrzController(
         IQrzService qrzService,
         IQsoRepository qsoRepository,
         ISettingsRepository settingsRepository,
+        IHubContext<LogHub, ILogHubClient> hubContext,
         ILogger<QrzController> logger)
     {
         _qrzService = qrzService;
         _qsoRepository = qsoRepository;
         _settingsRepository = settingsRepository;
+        _hubContext = hubContext;
         _logger = logger;
     }
 
@@ -113,6 +119,108 @@ public class QrzController : ControllerBase
                 r.QsoId
             ))
         ));
+    }
+
+    /// <summary>
+    /// Sync unsynced QSOs to QRZ logbook with progress updates via SignalR
+    /// </summary>
+    [HttpPost("sync")]
+    [ProducesResponseType(typeof(QrzUploadResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<QrzUploadResponse>> SyncAllQsos()
+    {
+        var settings = await _settingsRepository.GetAsync() ?? new UserSettings();
+        if (string.IsNullOrEmpty(settings.Qrz.ApiKey))
+        {
+            return BadRequest("QRZ API key not configured. Please configure it in Settings.");
+        }
+
+        // Get only unsynced QSOs (those without a QrzLogId)
+        var unsyncedQsos = await _qsoRepository.GetUnsyncedToQrzAsync();
+        var qsoList = unsyncedQsos.ToList();
+
+        if (qsoList.Count == 0)
+        {
+            // Send completion with zero to sync
+            await _hubContext.BroadcastQrzSyncProgress(new QrzSyncProgressEvent(
+                Total: 0,
+                Completed: 0,
+                Successful: 0,
+                Failed: 0,
+                IsComplete: true,
+                CurrentCallsign: null,
+                Message: "All QSOs already synced to QRZ"
+            ));
+            return Ok(new QrzUploadResponse(0, 0, 0, Enumerable.Empty<QrzUploadResultDto>()));
+        }
+
+        _logger.LogInformation("Starting QRZ sync for {Count} unsynced QSOs", qsoList.Count);
+
+        var results = new List<QrzUploadResultDto>();
+        var successCount = 0;
+        var failedCount = 0;
+
+        // Send initial progress
+        await _hubContext.BroadcastQrzSyncProgress(new QrzSyncProgressEvent(
+            Total: qsoList.Count,
+            Completed: 0,
+            Successful: 0,
+            Failed: 0,
+            IsComplete: false,
+            CurrentCallsign: null,
+            Message: $"Starting sync of {qsoList.Count} unsynced QSOs..."
+        ));
+
+        for (int i = 0; i < qsoList.Count; i++)
+        {
+            var qso = qsoList[i];
+
+            // Send progress update
+            await _hubContext.BroadcastQrzSyncProgress(new QrzSyncProgressEvent(
+                Total: qsoList.Count,
+                Completed: i,
+                Successful: successCount,
+                Failed: failedCount,
+                IsComplete: false,
+                CurrentCallsign: qso.Callsign,
+                Message: $"Uploading {qso.Callsign}..."
+            ));
+
+            var result = await _qrzService.UploadQsoAsync(qso);
+            results.Add(new QrzUploadResultDto(result.Success, result.LogId, result.Message, result.QsoId));
+
+            if (result.Success)
+            {
+                successCount++;
+                // Update the QSO with QRZ log ID to prevent re-uploading
+                if (!string.IsNullOrEmpty(result.LogId))
+                {
+                    await _qsoRepository.UpdateQrzSyncStatusAsync(qso.Id, result.LogId);
+                }
+            }
+            else
+            {
+                failedCount++;
+            }
+
+            // Small delay to avoid rate limiting
+            await Task.Delay(100);
+        }
+
+        // Send completion
+        await _hubContext.BroadcastQrzSyncProgress(new QrzSyncProgressEvent(
+            Total: qsoList.Count,
+            Completed: qsoList.Count,
+            Successful: successCount,
+            Failed: failedCount,
+            IsComplete: true,
+            CurrentCallsign: null,
+            Message: $"Sync complete: {successCount} uploaded, {failedCount} failed"
+        ));
+
+        _logger.LogInformation("QRZ sync completed: {Success}/{Total} successful", successCount, qsoList.Count);
+
+        return Ok(new QrzUploadResponse(qsoList.Count, successCount, failedCount, results));
     }
 
     /// <summary>

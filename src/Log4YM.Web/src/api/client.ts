@@ -189,6 +189,12 @@ class ApiClient {
     });
   }
 
+  async syncToQrz(): Promise<QrzUploadResponse> {
+    return this.fetch('/qrz/sync', {
+      method: 'POST',
+    });
+  }
+
   async lookupCallsignQrz(callsign: string): Promise<QrzCallsignResponse> {
     return this.fetch(`/qrz/lookup/${encodeURIComponent(callsign)}`);
   }

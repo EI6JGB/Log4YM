@@ -74,6 +74,13 @@ public class Qso
 
     [BsonElement("updatedAt")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    // QRZ sync tracking
+    [BsonElement("qrzLogId")]
+    public string? QrzLogId { get; set; }
+
+    [BsonElement("qrzSyncedAt")]
+    public DateTime? QrzSyncedAt { get; set; }
 }
 
 public class StationInfo

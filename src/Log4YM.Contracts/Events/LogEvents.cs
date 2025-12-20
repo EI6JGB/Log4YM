@@ -515,3 +515,18 @@ public record SmartUnlinkBroadcastStatusEvent(
 public record SmartUnlinkStatusEvent(
     List<SmartUnlinkRadioAddedEvent> Radios
 );
+
+// ===== QRZ Sync Events =====
+
+/// <summary>
+/// QRZ sync progress update
+/// </summary>
+public record QrzSyncProgressEvent(
+    int Total,
+    int Completed,
+    int Successful,
+    int Failed,
+    bool IsComplete,
+    string? CurrentCallsign,
+    string? Message
+);

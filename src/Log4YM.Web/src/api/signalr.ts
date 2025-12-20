@@ -341,6 +341,17 @@ export interface SmartUnlinkStatusEvent {
   radios: SmartUnlinkRadioAddedEvent[];
 }
 
+// QRZ Sync types
+export interface QrzSyncProgressEvent {
+  total: number;
+  completed: number;
+  successful: number;
+  failed: number;
+  isComplete: boolean;
+  currentCallsign: string | null;
+  message: string | null;
+}
+
 type EventHandlers = {
   onCallsignFocused?: (evt: CallsignFocusedEvent) => void;
   onCallsignLookedUp?: (evt: CallsignLookedUpEvent) => void;
@@ -369,6 +380,8 @@ type EventHandlers = {
   onSmartUnlinkRadioUpdated?: (evt: SmartUnlinkRadioUpdatedEvent) => void;
   onSmartUnlinkRadioRemoved?: (evt: SmartUnlinkRadioRemovedEvent) => void;
   onSmartUnlinkStatus?: (evt: SmartUnlinkStatusEvent) => void;
+  // QRZ Sync handlers
+  onQrzSyncProgress?: (evt: QrzSyncProgressEvent) => void;
 };
 
 class SignalRService {
@@ -550,6 +563,11 @@ class SignalRService {
 
     this.connection.on('OnSmartUnlinkStatus', (evt: SmartUnlinkStatusEvent) => {
       this.handlers.onSmartUnlinkStatus?.(evt);
+    });
+
+    // QRZ Sync events
+    this.connection.on('OnQrzSyncProgress', (evt: QrzSyncProgressEvent) => {
+      this.handlers.onQrzSyncProgress?.(evt);
     });
   }
 

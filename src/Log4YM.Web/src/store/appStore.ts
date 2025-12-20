@@ -70,6 +70,20 @@ interface AppState {
   updateSmartUnlinkRadio: (radio: SmartUnlinkRadioAddedEvent) => void;
   removeSmartUnlinkRadio: (id: string) => void;
   setSmartUnlinkRadios: (radios: SmartUnlinkRadioAddedEvent[]) => void;
+
+  // QRZ Sync
+  qrzSyncProgress: QrzSyncProgress | null;
+  setQrzSyncProgress: (progress: QrzSyncProgress | null) => void;
+}
+
+export interface QrzSyncProgress {
+  total: number;
+  completed: number;
+  successful: number;
+  failed: number;
+  isComplete: boolean;
+  currentCallsign: string | null;
+  message: string | null;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -218,4 +232,8 @@ export const useAppStore = create<AppState>((set) => ({
       radios.forEach((radio) => map.set(radio.id, radio));
       return { smartUnlinkRadios: map };
     }),
+
+  // QRZ Sync
+  qrzSyncProgress: null,
+  setQrzSyncProgress: (progress) => set({ qrzSyncProgress: progress }),
 }));

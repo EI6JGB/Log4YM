@@ -273,8 +273,22 @@ export function LogEntryPlugin() {
           </div>
         </div>
 
-        {/* Callsign Info Card */}
-        {focusedCallsignInfo && formData.callsign && (
+        {/* Callsign Info Card - Loading State */}
+        {isLookingUpCallsign && formData.callsign && (
+          <div className="bg-dark-700/50 rounded-lg p-2 border border-glass-100 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-lg bg-dark-600 flex items-center justify-center">
+                <Loader2 className="w-5 h-5 text-accent-primary animate-spin" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-400 text-sm">Looking up callsign...</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Callsign Info Card - Data */}
+        {!isLookingUpCallsign && focusedCallsignInfo && formData.callsign && (
           <div className="bg-dark-700/50 rounded-lg p-2 border border-glass-100 animate-fade-in">
             <div className="flex items-center gap-2">
               {focusedCallsignInfo.imageUrl ? (
@@ -290,11 +304,11 @@ export function LogEntryPlugin() {
               )}
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-gray-100 text-sm truncate">
-                  {focusedCallsignInfo.name || 'Unknown'}
+                  {focusedCallsignInfo.name || focusedCallsignInfo.firstName || 'No name on file'}
                 </p>
                 <div className="flex items-center gap-2 text-xs text-gray-400">
                   <span>{getCountryFlag(focusedCallsignInfo.country) || '🏳️'}</span>
-                  <span className="truncate">{focusedCallsignInfo.country}</span>
+                  <span className="truncate">{focusedCallsignInfo.country || 'Unknown'}</span>
                   {focusedCallsignInfo.grid && (
                     <>
                       <MapPin className="w-3 h-3" />
@@ -304,7 +318,7 @@ export function LogEntryPlugin() {
                 </div>
               </div>
               <div className="text-3xl" title={focusedCallsignInfo.country || 'Unknown country'}>
-                {getCountryFlag(focusedCallsignInfo.country, '🇮🇪')}
+                {getCountryFlag(focusedCallsignInfo.country, '🏳️')}
               </div>
             </div>
           </div>

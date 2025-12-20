@@ -8,6 +8,8 @@ public interface IQsoRepository
 {
     Task<Qso?> GetByIdAsync(string id);
     Task<IEnumerable<Qso>> GetRecentAsync(int limit = 100);
+    Task<IEnumerable<Qso>> GetAllAsync();
+    Task<IEnumerable<Qso>> GetUnsyncedToQrzAsync();
     Task<(IEnumerable<Qso> Items, int TotalCount)> SearchAsync(QsoSearchRequest criteria);
     Task<Qso> CreateAsync(Qso qso);
     Task<bool> UpdateAsync(string id, Qso qso);
@@ -16,6 +18,7 @@ public interface IQsoRepository
     Task<int> GetCountAsync();
     Task<bool> ExistsAsync(string callsign, DateTime qsoDate, string timeOn, string band, string mode);
     Task<IEnumerable<Qso>> GetByIdsAsync(IEnumerable<string> ids);
+    Task<bool> UpdateQrzSyncStatusAsync(string id, string qrzLogId);
 }
 
 public class QsoRepository : IQsoRepository
@@ -39,6 +42,15 @@ public class QsoRepository : IQsoRepository
             .SortByDescending(q => q.QsoDate)
             .ThenByDescending(q => q.TimeOn)
             .Limit(limit)
+            .ToListAsync();
+    }
+
+    public async Task<IEnumerable<Qso>> GetAllAsync()
+    {
+        return await _collection
+            .Find(_ => true)
+            .SortByDescending(q => q.QsoDate)
+            .ThenByDescending(q => q.TimeOn)
             .ToListAsync();
     }
 
@@ -162,5 +174,26 @@ public class QsoRepository : IQsoRepository
         var idList = ids.ToList();
         var filter = Builders<Qso>.Filter.In(q => q.Id, idList);
         return await _collection.Find(filter).ToListAsync();
+    }
+
+    public async Task<IEnumerable<Qso>> GetUnsyncedToQrzAsync()
+    {
+        var filter = Builders<Qso>.Filter.Eq(q => q.QrzLogId, null);
+        return await _collection
+            .Find(filter)
+            .SortByDescending(q => q.QsoDate)
+            .ThenByDescending(q => q.TimeOn)
+            .ToListAsync();
+    }
+
+    public async Task<bool> UpdateQrzSyncStatusAsync(string id, string qrzLogId)
+    {
+        var update = Builders<Qso>.Update
+            .Set(q => q.QrzLogId, qrzLogId)
+            .Set(q => q.QrzSyncedAt, DateTime.UtcNow)
+            .Set(q => q.UpdatedAt, DateTime.UtcNow);
+
+        var result = await _collection.UpdateOneAsync(q => q.Id == id, update);
+        return result.ModifiedCount > 0;
     }
 }

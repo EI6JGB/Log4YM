@@ -39,6 +39,9 @@ public interface ILogHubClient
     Task OnSmartUnlinkRadioUpdated(SmartUnlinkRadioUpdatedEvent evt);
     Task OnSmartUnlinkRadioRemoved(SmartUnlinkRadioRemovedEvent evt);
     Task OnSmartUnlinkStatus(SmartUnlinkStatusEvent evt);
+
+    // QRZ Sync events
+    Task OnQrzSyncProgress(QrzSyncProgressEvent evt);
 }
 
 public class LogHub : Hub<ILogHubClient>
@@ -444,5 +447,10 @@ public static class LogHubExtensions
     public static async Task BroadcastRadioSlicesUpdated(this IHubContext<LogHub, ILogHubClient> hub, RadioSlicesUpdatedEvent evt)
     {
         await hub.Clients.All.OnRadioSlicesUpdated(evt);
+    }
+
+    public static async Task BroadcastQrzSyncProgress(this IHubContext<LogHub, ILogHubClient> hub, QrzSyncProgressEvent evt)
+    {
+        await hub.Clients.All.OnQrzSyncProgress(evt);
     }
 }

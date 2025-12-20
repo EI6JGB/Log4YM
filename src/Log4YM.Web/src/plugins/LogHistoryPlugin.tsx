@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Book, Search, Calendar, Radio, Filter, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { Book, Search, Calendar, Radio, Filter, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronUp, ChevronDown, X, CloudUpload, Loader2 } from 'lucide-react';
 import { AgGridReact } from 'ag-grid-react';
 import { ColDef, ICellRendererParams } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
@@ -8,6 +8,7 @@ import 'ag-grid-community/styles/ag-theme-alpine.css';
 import { api, QsoResponse } from '../api/client';
 import { GlassPanel } from '../components/GlassPanel';
 import { getCountryFlag } from '../core/countryFlags';
+import { useAppStore } from '../store/appStore';
 
 // Custom cell renderer for mode badges
 const ModeCellRenderer = (props: ICellRendererParams<QsoResponse>) => {
@@ -65,7 +66,23 @@ export function LogHistoryPlugin() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const [showSummary, setShowSummary] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const pageSize = 50;
+
+  const { qrzSyncProgress, setQrzSyncProgress } = useAppStore();
+
+  const handleSyncToQrz = useCallback(async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    setQrzSyncProgress(null);
+    try {
+      await api.syncToQrz();
+    } catch (error) {
+      console.error('Failed to sync to QRZ:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [isSyncing, setQrzSyncProgress]);
 
   const { data: response, isLoading } = useQuery({
     queryKey: ['qsos', callsignSearch, nameSearch, selectedBand, selectedMode, fromDate, toDate, currentPage],
@@ -191,14 +208,79 @@ export function LogHistoryPlugin() {
       title="Log History"
       icon={<Book className="w-5 h-5" />}
       actions={
-        <div className="flex items-center gap-2 text-sm text-gray-400">
+        <div className="flex items-center gap-3 text-sm text-gray-400">
           <span>{totalCount.toLocaleString()} QSOs</span>
           <span className="text-glass-100">|</span>
           <span>{stats?.uniqueCountries || 0} DXCC</span>
+          <button
+            onClick={handleSyncToQrz}
+            disabled={isSyncing}
+            className="glass-button p-1.5 flex items-center gap-1.5 text-accent-info hover:text-accent-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Upload unsynced QSOs to QRZ.com (one-way push)"
+          >
+            {isSyncing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <CloudUpload className="w-4 h-4" />
+            )}
+            <span className="text-xs">Push to QRZ</span>
+          </button>
         </div>
       }
     >
       <div className="p-4 space-y-4">
+        {/* QRZ Sync Progress */}
+        {qrzSyncProgress && !qrzSyncProgress.isComplete && qrzSyncProgress.total > 0 && (
+          <div className="bg-dark-700/80 rounded-lg p-3 border border-accent-info/30">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 text-accent-info animate-spin" />
+                <span className="text-sm text-gray-300">
+                  {qrzSyncProgress.message || `Syncing to QRZ.com...`}
+                </span>
+              </div>
+              <span className="text-xs text-gray-400">
+                {qrzSyncProgress.completed} / {qrzSyncProgress.total}
+              </span>
+            </div>
+            <div className="w-full bg-dark-600 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-accent-info h-full transition-all duration-300 ease-out"
+                style={{ width: `${(qrzSyncProgress.completed / qrzSyncProgress.total) * 100}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-xs text-gray-500 mt-1">
+              <span className="text-accent-success">{qrzSyncProgress.successful} successful</span>
+              {qrzSyncProgress.failed > 0 && (
+                <span className="text-accent-error">{qrzSyncProgress.failed} failed</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* QRZ Sync Complete */}
+        {qrzSyncProgress?.isComplete && (
+          <div className="bg-dark-700/80 rounded-lg p-3 border border-accent-success/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CloudUpload className="w-4 h-4 text-accent-success" />
+                <span className="text-sm text-gray-300">
+                  {qrzSyncProgress.total === 0
+                    ? 'All QSOs already synced to QRZ'
+                    : `QRZ Sync Complete: ${qrzSyncProgress.successful} uploaded${qrzSyncProgress.failed > 0 ? `, ${qrzSyncProgress.failed} failed` : ''}`
+                  }
+                </span>
+              </div>
+              <button
+                onClick={() => setQrzSyncProgress(null)}
+                className="text-gray-500 hover:text-gray-300"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Collapsible Summary Section */}
         {stats && (
           <div className="bg-dark-700/50 rounded-lg overflow-hidden">
