@@ -81,6 +81,10 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<FlexRadioService>(
 builder.Services.AddSingleton<TciRadioService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<TciRadioService>());
 
+// Register Hamlib rigctld CAT service
+builder.Services.AddSingleton<HamlibService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<HamlibService>());
+
 // Register SmartUnlink service
 builder.Services.AddSingleton<SmartUnlinkService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SmartUnlinkService>());

@@ -206,7 +206,7 @@ export interface SetPgxlStandbyCommand {
 }
 
 // Radio CAT Control types
-export type RadioType = 'FlexRadio' | 'Tci';
+export type RadioType = 'FlexRadio' | 'Tci' | 'Hamlib';
 
 export type RadioConnectionState =
   | 'Disconnected'
@@ -647,6 +647,15 @@ class SignalRService {
 
   async requestRadioStatus(): Promise<void> {
     await this.connection?.invoke('RequestRadioStatus');
+  }
+
+  // Hamlib (rigctld) methods
+  async connectHamlib(host: string, port: number = 4532, name?: string): Promise<void> {
+    await this.connection?.invoke('ConnectHamlib', host, port, name);
+  }
+
+  async disconnectHamlib(radioId: string): Promise<void> {
+    await this.connection?.invoke('DisconnectHamlib', radioId);
   }
 
   // SmartUnlink methods

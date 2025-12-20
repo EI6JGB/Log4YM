@@ -224,6 +224,15 @@ export function useSignalR() {
     await signalRService.selectRadioInstance(radioId, instance);
   }, []);
 
+  // Hamlib (rigctld) methods
+  const connectHamlib = useCallback(async (host: string, port: number = 4532, name?: string) => {
+    await signalRService.connectHamlib(host, port, name);
+  }, []);
+
+  const disconnectHamlib = useCallback(async (radioId: string) => {
+    await signalRService.disconnectHamlib(radioId);
+  }, []);
+
   // SmartUnlink methods
   const addSmartUnlinkRadioFn = useCallback(async (dto: SmartUnlinkRadioDto) => {
     await signalRService.addSmartUnlinkRadio(dto);
@@ -256,6 +265,9 @@ export function useSignalR() {
     disconnectRadio,
     selectRadioSlice,
     selectRadioInstance,
+    // Hamlib (rigctld)
+    connectHamlib,
+    disconnectHamlib,
     // SmartUnlink
     addSmartUnlinkRadio: addSmartUnlinkRadioFn,
     updateSmartUnlinkRadio: updateSmartUnlinkRadioFn,

@@ -294,7 +294,8 @@ public record SetPgxlStandbyCommand(
 public enum RadioType
 {
     FlexRadio,
-    Tci
+    Tci,
+    Hamlib
 }
 
 /// <summary>

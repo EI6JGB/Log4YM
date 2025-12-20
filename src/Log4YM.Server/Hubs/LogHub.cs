@@ -51,6 +51,7 @@ public class LogHub : Hub<ILogHubClient>
     private readonly PgxlService _pgxlService;
     private readonly FlexRadioService _flexRadioService;
     private readonly TciRadioService _tciRadioService;
+    private readonly HamlibService _hamlibService;
     private readonly SmartUnlinkService _smartUnlinkService;
     private readonly RotatorService _rotatorService;
     private readonly IQrzService _qrzService;
@@ -62,6 +63,7 @@ public class LogHub : Hub<ILogHubClient>
         PgxlService pgxlService,
         FlexRadioService flexRadioService,
         TciRadioService tciRadioService,
+        HamlibService hamlibService,
         SmartUnlinkService smartUnlinkService,
         RotatorService rotatorService,
         IQrzService qrzService,
@@ -72,6 +74,7 @@ public class LogHub : Hub<ILogHubClient>
         _pgxlService = pgxlService;
         _flexRadioService = flexRadioService;
         _tciRadioService = tciRadioService;
+        _hamlibService = hamlibService;
         _smartUnlinkService = smartUnlinkService;
         _rotatorService = rotatorService;
         _qrzService = qrzService;
@@ -292,7 +295,7 @@ public class LogHub : Hub<ILogHubClient>
     {
         _logger.LogInformation("Connecting to radio {RadioId}", cmd.RadioId);
 
-        // Try FlexRadio first, then TCI
+        // Try FlexRadio first, then TCI, then Hamlib
         if (_flexRadioService.HasRadio(cmd.RadioId))
         {
             await _flexRadioService.ConnectAsync(cmd.RadioId);
@@ -300,6 +303,11 @@ public class LogHub : Hub<ILogHubClient>
         else if (_tciRadioService.HasRadio(cmd.RadioId))
         {
             await _tciRadioService.ConnectAsync(cmd.RadioId);
+        }
+        else if (_hamlibService.HasRadio(cmd.RadioId))
+        {
+            // Hamlib radios are already connected when added
+            _logger.LogDebug("Hamlib radio {RadioId} is already connected", cmd.RadioId);
         }
         else
         {
@@ -319,6 +327,28 @@ public class LogHub : Hub<ILogHubClient>
         {
             await _tciRadioService.DisconnectAsync(cmd.RadioId);
         }
+        else if (_hamlibService.HasRadio(cmd.RadioId))
+        {
+            await _hamlibService.DisconnectAsync(cmd.RadioId);
+        }
+    }
+
+    /// <summary>
+    /// Connect to a rigctld instance (Hamlib daemon)
+    /// </summary>
+    public async Task ConnectHamlib(string host, int port = 4532, string? name = null)
+    {
+        _logger.LogInformation("Connecting to rigctld at {Host}:{Port}", host, port);
+        await _hamlibService.ConnectAsync(host, port, name);
+    }
+
+    /// <summary>
+    /// Disconnect from a rigctld instance
+    /// </summary>
+    public async Task DisconnectHamlib(string radioId)
+    {
+        _logger.LogInformation("Disconnecting from rigctld {RadioId}", radioId);
+        await _hamlibService.DisconnectAsync(radioId);
     }
 
     public async Task SelectRadioSlice(SelectRadioSliceCommand cmd)
@@ -348,6 +378,11 @@ public class LogHub : Hub<ILogHubClient>
             await Clients.Caller.OnRadioDiscovered(radio);
         }
 
+        foreach (var radio in _hamlibService.GetDiscoveredRadios())
+        {
+            await Clients.Caller.OnRadioDiscovered(radio);
+        }
+
         // Send current radio states
         foreach (var state in _flexRadioService.GetRadioStates())
         {
@@ -355,6 +390,11 @@ public class LogHub : Hub<ILogHubClient>
         }
 
         foreach (var state in _tciRadioService.GetRadioStates())
+        {
+            await Clients.Caller.OnRadioStateChanged(state);
+        }
+
+        foreach (var state in _hamlibService.GetRadioStates())
         {
             await Clients.Caller.OnRadioStateChanged(state);
         }

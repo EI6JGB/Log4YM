@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Radio, Wifi, WifiOff, Search, Power, PowerOff } from "lucide-react";
+import { Radio, Wifi, WifiOff, Search, Power, PowerOff, Plus, Terminal } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { useSignalR } from "../hooks/useSignalR";
 import { GlassPanel } from "../components/GlassPanel";
-import type { RadioType, RadioConnectionState } from "../api/signalr";
+import type { RadioConnectionState } from "../api/signalr";
 
 export function RadioPlugin() {
   const {
@@ -20,10 +20,17 @@ export function RadioPlugin() {
     connectRadio,
     disconnectRadio,
     selectRadioSlice,
+    connectHamlib,
+    disconnectHamlib,
   } = useSignalR();
 
-  const [selectedType, setSelectedType] = useState<RadioType | null>(null);
+  const [selectedType, setSelectedType] = useState<'FlexRadio' | 'Tci' | null>(null);
   const [isDiscovering, setIsDiscovering] = useState(false);
+  const [showHamlibForm, setShowHamlibForm] = useState(false);
+  const [hamlibHost, setHamlibHost] = useState("localhost");
+  const [hamlibPort, setHamlibPort] = useState("4532");
+  const [hamlibName, setHamlibName] = useState("");
+  const [isConnectingHamlib, setIsConnectingHamlib] = useState(false);
 
   // Convert Map to array for rendering
   const radios = Array.from(discoveredRadios.values());
@@ -37,7 +44,7 @@ export function RadioPlugin() {
     ? radioStates.get(selectedRadioId)
     : null;
 
-  const handleStartDiscovery = async (type: RadioType) => {
+  const handleStartDiscovery = async (type: 'FlexRadio' | 'Tci') => {
     setSelectedType(type);
     setIsDiscovering(true);
     await startRadioDiscovery(type);
@@ -57,8 +64,29 @@ export function RadioPlugin() {
 
   const handleDisconnect = async () => {
     if (selectedRadioId) {
-      await disconnectRadio(selectedRadioId);
+      const radio = discoveredRadios.get(selectedRadioId);
+      if (radio?.type === "Hamlib") {
+        await disconnectHamlib(selectedRadioId);
+      } else {
+        await disconnectRadio(selectedRadioId);
+      }
       setSelectedRadio(null);
+    }
+  };
+
+  const handleConnectHamlib = async () => {
+    const port = parseInt(hamlibPort, 10);
+    if (!hamlibHost || isNaN(port)) return;
+
+    setIsConnectingHamlib(true);
+    try {
+      await connectHamlib(hamlibHost, port, hamlibName || undefined);
+      setShowHamlibForm(false);
+      setHamlibHost("localhost");
+      setHamlibPort("4532");
+      setHamlibName("");
+    } finally {
+      setIsConnectingHamlib(false);
     }
   };
 
@@ -233,10 +261,10 @@ export function RadioPlugin() {
           <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">
             Radio Type
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => handleStartDiscovery("FlexRadio")}
-              disabled={isDiscovering}
+              disabled={isDiscovering || showHamlibForm}
               className={`px-4 py-3 rounded-lg text-sm font-medium transition-all border ${
                 selectedType === "FlexRadio" && isDiscovering
                   ? "bg-accent-primary/20 text-accent-primary border-accent-primary/30"
@@ -250,7 +278,7 @@ export function RadioPlugin() {
             </button>
             <button
               onClick={() => handleStartDiscovery("Tci")}
-              disabled={isDiscovering}
+              disabled={isDiscovering || showHamlibForm}
               className={`px-4 py-3 rounded-lg text-sm font-medium transition-all border ${
                 selectedType === "Tci" && isDiscovering
                   ? "bg-accent-primary/20 text-accent-primary border-accent-primary/30"
@@ -259,11 +287,91 @@ export function RadioPlugin() {
             >
               <div className="flex flex-col items-center gap-1">
                 <Radio className="w-5 h-5" />
-                <span>Anan | HL2 | Sunsdr</span>
+                <span>TCI</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setShowHamlibForm(!showHamlibForm)}
+              disabled={isDiscovering}
+              className={`px-4 py-3 rounded-lg text-sm font-medium transition-all border ${
+                showHamlibForm
+                  ? "bg-orange-500/20 text-orange-400 border-orange-500/30"
+                  : "bg-dark-700 text-gray-300 hover:bg-dark-600 border-glass-100 disabled:opacity-50"
+              }`}
+            >
+              <div className="flex flex-col items-center gap-1">
+                <Terminal className="w-5 h-5" />
+                <span>rigctld</span>
               </div>
             </button>
           </div>
         </div>
+
+        {/* rigctld Connection Form */}
+        {showHamlibForm && (
+          <div className="bg-dark-700/50 rounded-lg p-4 border border-orange-500/30 space-y-3">
+            <div className="text-xs text-orange-400 uppercase tracking-wider mb-2">
+              Connect to rigctld
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Host</label>
+                <input
+                  type="text"
+                  value={hamlibHost}
+                  onChange={(e) => setHamlibHost(e.target.value)}
+                  placeholder="localhost"
+                  className="w-full px-3 py-2 bg-dark-800 border border-glass-100 rounded-lg text-sm text-gray-200 focus:outline-none focus:border-orange-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Port</label>
+                <input
+                  type="number"
+                  value={hamlibPort}
+                  onChange={(e) => setHamlibPort(e.target.value)}
+                  placeholder="4532"
+                  className="w-full px-3 py-2 bg-dark-800 border border-glass-100 rounded-lg text-sm text-gray-200 focus:outline-none focus:border-orange-500/50"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Name (optional)</label>
+              <input
+                type="text"
+                value={hamlibName}
+                onChange={(e) => setHamlibName(e.target.value)}
+                placeholder="My Radio"
+                className="w-full px-3 py-2 bg-dark-800 border border-glass-100 rounded-lg text-sm text-gray-200 focus:outline-none focus:border-orange-500/50"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={handleConnectHamlib}
+                disabled={isConnectingHamlib || !hamlibHost}
+                className="flex-1 px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 transition-all disabled:opacity-50"
+              >
+                {isConnectingHamlib ? (
+                  <>
+                    <Wifi className="w-4 h-4 animate-pulse" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4" />
+                    Connect
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => setShowHamlibForm(false)}
+                className="px-4 py-2 text-sm font-medium bg-dark-700 text-gray-400 rounded-lg hover:bg-dark-600 transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Discovered Radios */}
         {radios.length > 0 ? (
@@ -286,16 +394,22 @@ export function RadioPlugin() {
                         className={`p-2 rounded-lg ${
                           radio.type === "FlexRadio"
                             ? "bg-blue-500/20"
+                            : radio.type === "Hamlib"
+                            ? "bg-orange-500/20"
                             : "bg-purple-500/20"
                         }`}
                       >
-                        <Radio
-                          className={`w-4 h-4 ${
-                            radio.type === "FlexRadio"
-                              ? "text-blue-400"
-                              : "text-purple-400"
-                          }`}
-                        />
+                        {radio.type === "Hamlib" ? (
+                          <Terminal className="w-4 h-4 text-orange-400" />
+                        ) : (
+                          <Radio
+                            className={`w-4 h-4 ${
+                              radio.type === "FlexRadio"
+                                ? "text-blue-400"
+                                : "text-purple-400"
+                            }`}
+                          />
+                        )}
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-200">

@@ -77,7 +77,7 @@ export function QrzProfilePlugin() {
                 </h2>
               </div>
               <p className="text-lg text-gray-200">
-                {focusedCallsignInfo.name || focusedCallsignInfo.firstName || 'No name on file'}
+                {focusedCallsignInfo.name || 'No name on file'}
               </p>
             </div>
 

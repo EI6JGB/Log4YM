@@ -305,7 +305,7 @@ export function LogEntryPlugin() {
               )}
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-gray-100 text-sm truncate">
-                  {focusedCallsignInfo.name || focusedCallsignInfo.firstName || 'No name on file'}
+                  {focusedCallsignInfo.name || 'No name on file'}
                 </p>
                 <div className="flex items-center gap-2 text-xs text-gray-400">
                   <span>{getCountryFlag(focusedCallsignInfo.country) || '🏳️'}</span>
