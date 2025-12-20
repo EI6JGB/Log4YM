@@ -29,15 +29,28 @@ export function RadioPlugin() {
   const [selectedType, setSelectedType] = useState<'FlexRadio' | 'Tci' | null>(null);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [showHamlibForm, setShowHamlibForm] = useState(false);
-  const [hamlibHost, setHamlibHost] = useState("localhost");
-  const [hamlibPort, setHamlibPort] = useState("4532");
-  const [hamlibName, setHamlibName] = useState("");
+  const [hamlibHost, setHamlibHost] = useState(() => localStorage.getItem('hamlibHost') || "localhost");
+  const [hamlibPort, setHamlibPort] = useState(() => localStorage.getItem('hamlibPort') || "4532");
+  const [hamlibName, setHamlibName] = useState(() => localStorage.getItem('hamlibName') || "");
   const [isConnectingHamlib, setIsConnectingHamlib] = useState(false);
   const [showTciForm, setShowTciForm] = useState(false);
-  const [tciHost, setTciHost] = useState("localhost");
-  const [tciPort, setTciPort] = useState("50001");
-  const [tciName, setTciName] = useState("");
+  const [tciHost, setTciHost] = useState(() => localStorage.getItem('tciHost') || "localhost");
+  const [tciPort, setTciPort] = useState(() => localStorage.getItem('tciPort') || "50001");
+  const [tciName, setTciName] = useState(() => localStorage.getItem('tciName') || "");
   const [isConnectingTci, setIsConnectingTci] = useState(false);
+
+  // Persist TCI/Hamlib settings to localStorage
+  useEffect(() => {
+    localStorage.setItem('tciHost', tciHost);
+    localStorage.setItem('tciPort', tciPort);
+    localStorage.setItem('tciName', tciName);
+  }, [tciHost, tciPort, tciName]);
+
+  useEffect(() => {
+    localStorage.setItem('hamlibHost', hamlibHost);
+    localStorage.setItem('hamlibPort', hamlibPort);
+    localStorage.setItem('hamlibName', hamlibName);
+  }, [hamlibHost, hamlibPort, hamlibName]);
 
   // Convert Map to array for rendering
   const radios = Array.from(discoveredRadios.values());

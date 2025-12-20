@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { Wifi, WifiOff, Settings, Zap } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Wifi, WifiOff, Settings, Zap, Radio } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { useSignalR } from '../hooks/useSignalR';
 import { GlassPanel } from '../components/GlassPanel';
+import type { PgxlStatusEvent } from '../api/signalr';
 
 // Types for A/B slice configuration
 interface SliceConfig {
@@ -13,12 +14,55 @@ interface SliceConfig {
 }
 
 export function PgxlPlugin() {
-  const { pgxlDevices } = useAppStore();
+  const {
+    pgxlDevices,
+    pgxlTciLinkA,
+    pgxlTciLinkB,
+    radioStates,
+    discoveredRadios,
+    radioConnectionStates,
+  } = useAppStore();
   const { setPgxlOperate, setPgxlStandby } = useSignalR();
   const [showSettings, setShowSettings] = useState(false);
 
   // Convert Map to array for rendering
   const devices = Array.from(pgxlDevices.values());
+
+  // Get linked TCI radio states
+  const linkedRadioStateA = pgxlTciLinkA ? radioStates.get(pgxlTciLinkA) : null;
+  const linkedRadioStateB = pgxlTciLinkB ? radioStates.get(pgxlTciLinkB) : null;
+  const linkedRadioInfoA = pgxlTciLinkA ? discoveredRadios.get(pgxlTciLinkA) : null;
+  const linkedRadioInfoB = pgxlTciLinkB ? discoveredRadios.get(pgxlTciLinkB) : null;
+
+  // Check connection states for linked radios
+  const linkedConnectionStateA = pgxlTciLinkA ? radioConnectionStates.get(pgxlTciLinkA) : null;
+  const linkedConnectionStateB = pgxlTciLinkB ? radioConnectionStates.get(pgxlTciLinkB) : null;
+
+  // Track previous connection states for safety feature
+  const prevConnectionStateA = useRef<string | null>(null);
+  const prevConnectionStateB = useRef<string | null>(null);
+
+  // Safety feature: put PGXL into standby if linked radio disconnects
+  useEffect(() => {
+    // Check if a linked radio just disconnected
+    const device = devices[0];
+    if (!device?.isOperating) return; // Only trigger if PGXL is operating
+
+    const wasConnectedA = prevConnectionStateA.current === 'Connected' || prevConnectionStateA.current === 'Monitoring';
+    const isDisconnectedA = linkedConnectionStateA === 'Disconnected' || linkedConnectionStateA === 'Error';
+
+    const wasConnectedB = prevConnectionStateB.current === 'Connected' || prevConnectionStateB.current === 'Monitoring';
+    const isDisconnectedB = linkedConnectionStateB === 'Disconnected' || linkedConnectionStateB === 'Error';
+
+    if ((pgxlTciLinkA && wasConnectedA && isDisconnectedA) ||
+        (pgxlTciLinkB && wasConnectedB && isDisconnectedB)) {
+      console.warn('PGXL Safety: Linked radio disconnected, putting PGXL into standby');
+      setPgxlStandby(device.serial);
+    }
+
+    prevConnectionStateA.current = linkedConnectionStateA ?? null;
+    prevConnectionStateB.current = linkedConnectionStateB ?? null;
+  }, [linkedConnectionStateA, linkedConnectionStateB, pgxlTciLinkA, pgxlTciLinkB, devices, setPgxlStandby]);
 
   if (devices.length === 0) {
     return (
@@ -40,20 +84,34 @@ export function PgxlPlugin() {
   // For now, show the first device
   const device = devices[0];
 
-  // A/B slice config from actual device status
-  const sliceA: SliceConfig = {
-    pttActive: device.isTransmitting,
-    band: device.band?.replace('m', '') || 'N/A',
-    mode: device.biasA || 'N/A',
-    radioName: 'Slice A',
-  };
+  // A/B slice config - use linked TCI radio info if available
+  const sliceA: SliceConfig = linkedRadioStateA
+    ? {
+        pttActive: linkedRadioStateA.isTransmitting,
+        band: linkedRadioStateA.band?.replace('m', '') || 'N/A',
+        mode: device.biasA || 'N/A',
+        radioName: linkedRadioInfoA?.model || 'TCI Radio',
+      }
+    : {
+        pttActive: device.isTransmitting,
+        band: device.band?.replace('m', '') || 'N/A',
+        mode: device.biasA || 'N/A',
+        radioName: 'Slice A',
+      };
 
-  const sliceB: SliceConfig = {
-    pttActive: false,
-    band: 'N/A',
-    mode: device.biasB || 'N/A',
-    radioName: 'Slice B',
-  };
+  const sliceB: SliceConfig = linkedRadioStateB
+    ? {
+        pttActive: linkedRadioStateB.isTransmitting,
+        band: linkedRadioStateB.band?.replace('m', '') || 'N/A',
+        mode: device.biasB || 'N/A',
+        radioName: linkedRadioInfoB?.model || 'TCI Radio',
+      }
+    : {
+        pttActive: false,
+        band: 'N/A',
+        mode: device.biasB || 'N/A',
+        radioName: 'Slice B',
+      };
 
   // Simulated voltage readings (will come from backend in future)
   const vdd = device.isOperating ? 52.0 : 0.0;
@@ -153,7 +211,9 @@ export function PgxlPlugin() {
         </div>
 
         {/* Status Alerts */}
-        {(device.setup.highSwr || device.setup.overTemp || device.setup.overCurrent) && (
+        {(device.setup.highSwr || device.setup.overTemp || device.setup.overCurrent ||
+          (pgxlTciLinkA && linkedConnectionStateA === 'Disconnected') ||
+          (pgxlTciLinkB && linkedConnectionStateB === 'Disconnected')) && (
           <div className="flex gap-2 px-3 pb-3 flex-wrap">
             {device.setup.highSwr && (
               <StatusBadge label="HIGH SWR" variant="danger" />
@@ -164,6 +224,12 @@ export function PgxlPlugin() {
             {device.setup.overCurrent && (
               <StatusBadge label="OVER CURRENT" variant="danger" />
             )}
+            {pgxlTciLinkA && linkedConnectionStateA === 'Disconnected' && (
+              <StatusBadge label="SIDE A RADIO LOST" variant="warning" />
+            )}
+            {pgxlTciLinkB && linkedConnectionStateB === 'Disconnected' && (
+              <StatusBadge label="SIDE B RADIO LOST" variant="warning" />
+            )}
           </div>
         )}
       </div>
@@ -173,6 +239,8 @@ export function PgxlPlugin() {
         <SettingsModal
           device={device}
           onClose={() => setShowSettings(false)}
+          linkedRadioIdA={pgxlTciLinkA}
+          linkedRadioIdB={pgxlTciLinkB}
         />
       )}
     </GlassPanel>
@@ -437,20 +505,32 @@ function StatusBadge({ label, variant }: StatusBadgeProps) {
 }
 
 interface SettingsModalProps {
-  device: {
-    serial: string;
-    ipAddress: string;
-    isOperating: boolean;
-    setup: {
-      bandSource: string;
-      selectedAntenna: number;
-      attenuatorEnabled: boolean;
-    };
-  };
+  device: PgxlStatusEvent;
   onClose: () => void;
+  linkedRadioIdA: string | null;
+  linkedRadioIdB: string | null;
 }
 
-function SettingsModal({ device, onClose }: SettingsModalProps) {
+function SettingsModal({ device, onClose, linkedRadioIdA, linkedRadioIdB }: SettingsModalProps) {
+  const { discoveredRadios, radioStates, setPgxlTciLink } = useAppStore();
+
+  // Get connected radios (TCI or Hamlib) that can be linked
+  // Use radioStates as the primary source since it's populated when we receive frequency data
+  const connectedRadios = Array.from(radioStates.keys()).map((radioId) => {
+    const discoveredInfo = discoveredRadios.get(radioId);
+    const radioState = radioStates.get(radioId);
+    return {
+      id: radioId,
+      model: discoveredInfo?.model || radioId,
+      ipAddress: discoveredInfo?.ipAddress || '',
+      band: radioState?.band,
+    };
+  });
+
+  const handleLinkChange = (side: 'A' | 'B', radioId: string) => {
+    setPgxlTciLink(side, radioId === '' ? null : radioId);
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-dark-800 rounded-xl border border-glass-100 shadow-2xl w-full max-w-md mx-4">
@@ -490,9 +570,56 @@ function SettingsModal({ device, onClose }: SettingsModalProps) {
             </div>
           </div>
 
-          {/* Future: Add configurable settings here */}
-          <div className="text-xs text-gray-500 text-center py-2">
-            Additional settings coming soon
+          {/* Radio Linking */}
+          <div className="bg-dark-700/50 rounded-lg p-3 border border-glass-100">
+            <div className="text-xs text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+              <Radio className="w-3.5 h-3.5" />
+              Radio Linking
+            </div>
+            <p className="text-xs text-gray-500 mb-3">
+              Link TCI/Hamlib radios to track band, mode, and PTT state
+            </p>
+            <div className="space-y-3">
+              {/* Side A */}
+              <div className="flex items-center gap-3">
+                <span className="text-gray-400 text-sm w-12">Side A:</span>
+                <select
+                  value={linkedRadioIdA || ''}
+                  onChange={(e) => handleLinkChange('A', e.target.value)}
+                  className="flex-1 bg-dark-600 border border-glass-100 rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-accent-primary"
+                >
+                  <option value="">Not linked</option>
+                  {connectedRadios.map((radio) => (
+                    <option key={radio.id} value={radio.id}>
+                      {radio.model} ({radio.ipAddress})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Side B */}
+              <div className="flex items-center gap-3">
+                <span className="text-gray-400 text-sm w-12">Side B:</span>
+                <select
+                  value={linkedRadioIdB || ''}
+                  onChange={(e) => handleLinkChange('B', e.target.value)}
+                  className="flex-1 bg-dark-600 border border-glass-100 rounded-lg px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-accent-primary"
+                >
+                  <option value="">Not linked</option>
+                  {connectedRadios.map((radio) => (
+                    <option key={radio.id} value={radio.id}>
+                      {radio.model} ({radio.ipAddress})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {connectedRadios.length === 0 && (
+              <p className="text-xs text-amber-400 mt-2">
+                No radios connected. Connect a TCI or rigctld radio first.
+              </p>
+            )}
           </div>
         </div>
 

@@ -49,6 +49,10 @@ interface AppState {
   pgxlDevices: Map<string, PgxlStatusEvent>;
   setPgxlStatus: (status: PgxlStatusEvent) => void;
   removePgxlDevice: (serial: string) => void;
+  // PGXL-TCI linking: radio IDs linked to PGXL sides A and B
+  pgxlTciLinkA: string | null;
+  pgxlTciLinkB: string | null;
+  setPgxlTciLink: (side: 'A' | 'B', radioId: string | null) => void;
 
   // Radio CAT Control
   discoveredRadios: Map<string, RadioDiscoveredEvent>;
@@ -155,6 +159,18 @@ export const useAppStore = create<AppState>((set) => ({
       devices.delete(serial);
       return { pgxlDevices: devices };
     }),
+  // PGXL-TCI linking (initialized from localStorage)
+  pgxlTciLinkA: localStorage.getItem('pgxlTciLinkA') || null,
+  pgxlTciLinkB: localStorage.getItem('pgxlTciLinkB') || null,
+  setPgxlTciLink: (side, radioId) => {
+    // Persist to localStorage
+    if (radioId) {
+      localStorage.setItem(side === 'A' ? 'pgxlTciLinkA' : 'pgxlTciLinkB', radioId);
+    } else {
+      localStorage.removeItem(side === 'A' ? 'pgxlTciLinkA' : 'pgxlTciLinkB');
+    }
+    return set(side === 'A' ? { pgxlTciLinkA: radioId } : { pgxlTciLinkB: radioId });
+  },
 
   // Radio CAT Control
   discoveredRadios: new Map(),
