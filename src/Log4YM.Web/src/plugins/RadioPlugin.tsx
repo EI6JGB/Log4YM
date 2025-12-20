@@ -51,14 +51,19 @@ export function RadioPlugin() {
     ? radioStates.get(selectedRadioId)
     : null;
 
-  // Reset local connecting state when we receive connection state from SignalR
+  // Reset local connecting state when we receive connection state or radio data from SignalR
   useEffect(() => {
-    if (selectedConnectionState && selectedConnectionState !== "Connecting") {
-      // Connection state received - reset local connecting flags
+    // If we have radio state (frequency data), we're definitely connected
+    if (selectedRadioState) {
       setIsConnectingTci(false);
       setIsConnectingHamlib(false);
     }
-  }, [selectedConnectionState]);
+    // Also reset if connection state is anything other than Connecting
+    else if (selectedConnectionState && selectedConnectionState !== "Connecting") {
+      setIsConnectingTci(false);
+      setIsConnectingHamlib(false);
+    }
+  }, [selectedConnectionState, selectedRadioState]);
 
   const handleStartDiscovery = async (type: 'FlexRadio' | 'Tci') => {
     setSelectedType(type);
@@ -167,9 +172,15 @@ export function RadioPlugin() {
 
   // If we have a selected radio that is connecting/connected, show the status display
   const isConnecting = selectedConnectionState === "Connecting";
-  const isConnected = selectedConnectionState && ["Connected", "Monitoring"].includes(selectedConnectionState);
+  // Consider connected if: explicit Connected/Monitoring state OR we're receiving radio data (frequency)
+  const isConnected = (selectedConnectionState && ["Connected", "Monitoring"].includes(selectedConnectionState))
+    || !!selectedRadioState;
   // Also check local connecting state for immediate UI feedback before SignalR events arrive
   const isLocallyConnecting = isConnectingTci || isConnectingHamlib;
+
+  // Effective connection state for display (infer Connected if we have radio data)
+  const effectiveConnectionState: RadioConnectionState | undefined =
+    selectedConnectionState ?? (selectedRadioState ? "Connected" : undefined);
 
   // Extract radio info from selectedRadioId if selectedRadio isn't available yet (race condition)
   const getRadioInfoFromId = (radioId: string) => {
@@ -197,11 +208,11 @@ export function RadioPlugin() {
           <div className="flex items-center gap-2">
             <span
               className={`flex items-center gap-1.5 text-xs ${getConnectionStateColor(
-                selectedConnectionState ?? undefined
+                effectiveConnectionState
               )}`}
             >
               <Wifi className="w-3.5 h-3.5" />
-              {getConnectionStateText(selectedConnectionState ?? undefined)}
+              {getConnectionStateText(effectiveConnectionState)}
             </span>
           </div>
         }
@@ -218,7 +229,7 @@ export function RadioPlugin() {
                 {radioInfo.ipAddress}
               </span>
             </div>
-            {(isConnecting || isLocallyConnecting) ? (
+            {(isConnecting || isLocallyConnecting) && !isConnected ? (
               <div className="px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 bg-yellow-500/20 text-yellow-400 rounded-lg">
                 <Wifi className="w-3.5 h-3.5 animate-pulse" />
                 Connecting...
@@ -242,7 +253,7 @@ export function RadioPlugin() {
             <div className="text-3xl font-bold text-accent-primary font-mono">
               {selectedRadioState
                 ? formatFrequency(selectedRadioState.frequencyHz)
-                : (isConnecting || isLocallyConnecting)
+                : (isConnecting || isLocallyConnecting) && !isConnected
                 ? <span className="text-gray-500 text-lg animate-pulse">Waiting for data...</span>
                 : "---"}
               {selectedRadioState && (
