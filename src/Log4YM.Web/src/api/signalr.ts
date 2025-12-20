@@ -659,7 +659,7 @@ class SignalRService {
   }
 
   // TCI direct connection methods
-  async connectTci(host: string, port: number = 40001, name?: string): Promise<void> {
+  async connectTci(host: string, port: number = 50001, name?: string): Promise<void> {
     await this.connection?.invoke('ConnectTci', host, port, name);
   }
 

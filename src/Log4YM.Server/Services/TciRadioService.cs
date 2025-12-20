@@ -21,7 +21,7 @@ public class TciRadioService : BackgroundService
     private readonly ConcurrentDictionary<string, TciRadioConnection> _connections = new();
 
     private const int DiscoveryPort = 1024;
-    private const int TciDefaultPort = 40001;
+    private const int TciDefaultPort = 50001;
     private const int RadioCleanupSeconds = 30;
     private const int DiscoveryBroadcastIntervalMs = 10000;
 
@@ -227,6 +227,7 @@ public class TciRadioService : BackgroundService
         var cutoff = DateTime.UtcNow.AddSeconds(-RadioCleanupSeconds);
         var staleRadios = _discoveredRadios.Values
             .Where(r => r.LastSeen < cutoff)
+            .Where(r => !_connections.ContainsKey(r.Id)) // Don't remove connected radios
             .ToList();
 
         foreach (var radio in staleRadios)

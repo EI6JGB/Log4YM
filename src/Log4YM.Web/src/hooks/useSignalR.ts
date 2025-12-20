@@ -234,7 +234,7 @@ export function useSignalR() {
   }, []);
 
   // TCI direct connection methods
-  const connectTci = useCallback(async (host: string, port: number = 40001, name?: string) => {
+  const connectTci = useCallback(async (host: string, port: number = 50001, name?: string) => {
     await signalRService.connectTci(host, port, name);
   }, []);
 

@@ -354,7 +354,7 @@ public class LogHub : Hub<ILogHubClient>
     /// <summary>
     /// Connect directly to a TCI server without discovery
     /// </summary>
-    public async Task ConnectTci(string host, int port = 40001, string? name = null)
+    public async Task ConnectTci(string host, int port = 50001, string? name = null)
     {
         _logger.LogInformation("Connecting to TCI at {Host}:{Port}", host, port);
         await _tciRadioService.ConnectDirectAsync(host, port, name);

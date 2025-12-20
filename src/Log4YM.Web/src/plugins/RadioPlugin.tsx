@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Radio, Wifi, WifiOff, Search, Power, PowerOff, Plus, Terminal } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { useSignalR } from "../hooks/useSignalR";
@@ -35,7 +35,7 @@ export function RadioPlugin() {
   const [isConnectingHamlib, setIsConnectingHamlib] = useState(false);
   const [showTciForm, setShowTciForm] = useState(false);
   const [tciHost, setTciHost] = useState("localhost");
-  const [tciPort, setTciPort] = useState("40001");
+  const [tciPort, setTciPort] = useState("50001");
   const [tciName, setTciName] = useState("");
   const [isConnectingTci, setIsConnectingTci] = useState(false);
 
@@ -50,6 +50,15 @@ export function RadioPlugin() {
   const selectedRadioState = selectedRadioId
     ? radioStates.get(selectedRadioId)
     : null;
+
+  // Reset local connecting state when we receive connection state from SignalR
+  useEffect(() => {
+    if (selectedConnectionState && selectedConnectionState !== "Connecting") {
+      // Connection state received - reset local connecting flags
+      setIsConnectingTci(false);
+      setIsConnectingHamlib(false);
+    }
+  }, [selectedConnectionState]);
 
   const handleStartDiscovery = async (type: 'FlexRadio' | 'Tci') => {
     setSelectedType(type);
@@ -72,9 +81,10 @@ export function RadioPlugin() {
   const handleDisconnect = async () => {
     if (selectedRadioId) {
       const radio = discoveredRadios.get(selectedRadioId);
-      if (radio?.type === "Hamlib") {
+      // Check radio type from discoveredRadios or from radioId prefix
+      if (radio?.type === "Hamlib" || selectedRadioId.startsWith("hamlib-")) {
         await disconnectHamlib(selectedRadioId);
-      } else if (radio?.type === "Tci" && selectedRadioId.startsWith("tci-")) {
+      } else if (radio?.type === "Tci" || selectedRadioId.startsWith("tci-")) {
         await disconnectTci(selectedRadioId);
       } else {
         await disconnectRadio(selectedRadioId);
@@ -87,32 +97,48 @@ export function RadioPlugin() {
     const port = parseInt(hamlibPort, 10);
     if (!hamlibHost || isNaN(port)) return;
 
+    // Auto-select the radio immediately (radioId format: hamlib-{host}:{port})
+    const radioId = `hamlib-${hamlibHost}:${port}`;
+    setSelectedRadio(radioId);
     setIsConnectingHamlib(true);
+    setShowHamlibForm(false);
+
     try {
       await connectHamlib(hamlibHost, port, hamlibName || undefined);
-      setShowHamlibForm(false);
+      // Reset form fields after successful connection initiation
       setHamlibHost("localhost");
       setHamlibPort("4532");
       setHamlibName("");
-    } finally {
+    } catch (error) {
+      // On error, deselect the radio and reset connecting state
+      setSelectedRadio(null);
       setIsConnectingHamlib(false);
     }
+    // Don't reset isConnectingHamlib here - it will be reset when connection state changes
   };
 
   const handleConnectTci = async () => {
     const port = parseInt(tciPort, 10);
     if (!tciHost || isNaN(port)) return;
 
+    // Auto-select the radio immediately (radioId format: tci-{host}:{port})
+    const radioId = `tci-${tciHost}:${port}`;
+    setSelectedRadio(radioId);
     setIsConnectingTci(true);
+    setShowTciForm(false);
+
     try {
       await connectTci(tciHost, port, tciName || undefined);
-      setShowTciForm(false);
+      // Reset form fields after successful connection initiation
       setTciHost("localhost");
-      setTciPort("40001");
+      setTciPort("50001");
       setTciName("");
-    } finally {
+    } catch (error) {
+      // On error, deselect the radio and reset connecting state
+      setSelectedRadio(null);
       setIsConnectingTci(false);
     }
+    // Don't reset isConnectingTci here - it will be reset when connection state changes
   };
 
   const formatFrequency = (hz: number): string => {
@@ -139,12 +165,30 @@ export function RadioPlugin() {
     return state || "Disconnected";
   };
 
-  // If we have an active radio connection, show the status display
-  if (
-    selectedRadio &&
-    selectedConnectionState &&
-    ["Connected", "Monitoring"].includes(selectedConnectionState)
-  ) {
+  // If we have a selected radio that is connecting/connected, show the status display
+  const isConnecting = selectedConnectionState === "Connecting";
+  const isConnected = selectedConnectionState && ["Connected", "Monitoring"].includes(selectedConnectionState);
+  // Also check local connecting state for immediate UI feedback before SignalR events arrive
+  const isLocallyConnecting = isConnectingTci || isConnectingHamlib;
+
+  // Extract radio info from selectedRadioId if selectedRadio isn't available yet (race condition)
+  const getRadioInfoFromId = (radioId: string) => {
+    // Format: tci-host:port or hamlib-host:port
+    if (radioId.startsWith("tci-")) {
+      const hostPort = radioId.substring(4);
+      return { model: "TCI Radio", ipAddress: hostPort, type: "Tci" as const };
+    }
+    if (radioId.startsWith("hamlib-")) {
+      const hostPort = radioId.substring(7);
+      return { model: "rigctld", ipAddress: hostPort, type: "Hamlib" as const };
+    }
+    return null;
+  };
+
+  const radioInfo = selectedRadio || (selectedRadioId ? getRadioInfoFromId(selectedRadioId) : null);
+
+  // Show connected view if: radio is selected AND (connecting via SignalR OR connected OR locally initiated connection)
+  if (selectedRadioId && radioInfo && (isConnecting || isConnected || isLocallyConnecting)) {
     return (
       <GlassPanel
         title="Radio"
@@ -153,11 +197,11 @@ export function RadioPlugin() {
           <div className="flex items-center gap-2">
             <span
               className={`flex items-center gap-1.5 text-xs ${getConnectionStateColor(
-                selectedConnectionState
+                selectedConnectionState ?? undefined
               )}`}
             >
               <Wifi className="w-3.5 h-3.5" />
-              {getConnectionStateText(selectedConnectionState)}
+              {getConnectionStateText(selectedConnectionState ?? undefined)}
             </span>
           </div>
         }
@@ -167,20 +211,27 @@ export function RadioPlugin() {
           <div className="flex items-center justify-between">
             <div className="text-sm text-gray-400">
               <span className="font-medium text-gray-200">
-                {selectedRadio.model}
+                {radioInfo.model}
               </span>
               <span className="mx-2">|</span>
               <span className="font-mono text-xs">
-                {selectedRadio.ipAddress}
+                {radioInfo.ipAddress}
               </span>
             </div>
-            <button
-              onClick={handleDisconnect}
-              className="px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all"
-            >
-              <PowerOff className="w-3.5 h-3.5" />
-              Disconnect
-            </button>
+            {(isConnecting || isLocallyConnecting) ? (
+              <div className="px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 bg-yellow-500/20 text-yellow-400 rounded-lg">
+                <Wifi className="w-3.5 h-3.5 animate-pulse" />
+                Connecting...
+              </div>
+            ) : (
+              <button
+                onClick={handleDisconnect}
+                className="px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all"
+              >
+                <PowerOff className="w-3.5 h-3.5" />
+                Disconnect
+              </button>
+            )}
           </div>
 
           {/* Frequency Display */}
@@ -191,10 +242,14 @@ export function RadioPlugin() {
             <div className="text-3xl font-bold text-accent-primary font-mono">
               {selectedRadioState
                 ? formatFrequency(selectedRadioState.frequencyHz)
+                : (isConnecting || isLocallyConnecting)
+                ? <span className="text-gray-500 text-lg animate-pulse">Waiting for data...</span>
                 : "---"}
-              <span className="text-lg font-normal text-gray-500 ml-2">
-                MHz
-              </span>
+              {selectedRadioState && (
+                <span className="text-lg font-normal text-gray-500 ml-2">
+                  MHz
+                </span>
+              )}
             </div>
           </div>
 
@@ -234,7 +289,7 @@ export function RadioPlugin() {
           </div>
 
           {/* Slice Selection for FlexRadio */}
-          {selectedRadio.type === "FlexRadio" &&
+          {selectedRadio?.type === "FlexRadio" &&
             selectedRadio.slices &&
             selectedRadio.slices.length > 0 && (
               <div className="mt-4">
@@ -427,7 +482,7 @@ export function RadioPlugin() {
                   type="number"
                   value={tciPort}
                   onChange={(e) => setTciPort(e.target.value)}
-                  placeholder="40001"
+                  placeholder="50001"
                   className="w-full px-3 py-2 bg-dark-800 border border-glass-100 rounded-lg text-sm text-gray-200 focus:outline-none focus:border-purple-500/50"
                 />
               </div>
