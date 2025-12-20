@@ -37,8 +37,13 @@ export function useSignalR() {
             setFocusedCallsign(evt.callsign);
           },
           onCallsignLookedUp: (evt) => {
-            setFocusedCallsignInfo(evt);
-            setLookingUpCallsign(false);
+            // Only apply result if it matches the current focused callsign
+            // This prevents out-of-order responses from showing stale data
+            const currentCallsign = useAppStore.getState().focusedCallsign;
+            if (evt.callsign?.toUpperCase() === currentCallsign?.toUpperCase()) {
+              setFocusedCallsignInfo(evt);
+              setLookingUpCallsign(false);
+            }
           },
           onQsoLogged: () => {
             // Invalidate QSO queries to refetch
@@ -169,9 +174,10 @@ export function useSignalR() {
 
   const focusCallsign = useCallback(async (callsign: string, source: string) => {
     setFocusedCallsign(callsign);
+    setFocusedCallsignInfo(null); // Clear old info to prevent stale data showing
     setLookingUpCallsign(true);
     await signalRService.focusCallsign({ callsign, source });
-  }, [setFocusedCallsign, setLookingUpCallsign]);
+  }, [setFocusedCallsign, setFocusedCallsignInfo, setLookingUpCallsign]);
 
   const selectSpot = useCallback(async (dxCall: string, frequency: number, mode?: string) => {
     await signalRService.selectSpot({ dxCall, frequency, mode });

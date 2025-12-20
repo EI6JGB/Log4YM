@@ -287,8 +287,9 @@ export function LogEntryPlugin() {
           </div>
         )}
 
-        {/* Callsign Info Card - Data */}
-        {!isLookingUpCallsign && focusedCallsignInfo && formData.callsign && (
+        {/* Callsign Info Card - Data (only show if callsign matches to avoid stale data from out-of-order responses) */}
+        {!isLookingUpCallsign && focusedCallsignInfo && formData.callsign &&
+         focusedCallsignInfo.callsign?.toUpperCase() === formData.callsign.toUpperCase() && (
           <div className="bg-dark-700/50 rounded-lg p-2 border border-glass-100 animate-fade-in">
             <div className="flex items-center gap-2">
               {focusedCallsignInfo.imageUrl ? (
