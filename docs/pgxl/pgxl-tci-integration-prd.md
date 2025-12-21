@@ -1,7 +1,7 @@
 # PGXL TCI Integration PRD
 
 **Version:** 1.0
-**Author:** Log4YM Development Team
+**Author:** EI6LF/b@briankeating.net
 **Date:** 2025-12-21
 **Status:** Draft
 
@@ -13,7 +13,7 @@ This PRD defines the requirements for integrating TCI (Thetis Control Interface)
 
 **Key Insight:** The PGXL was designed specifically for FlexRadio integration. When paired with a FlexRadio, the PGXL acts as a **client** that connects TO the radio, not the other way around. This means we cannot simply send commands to the PGXL; we must **emulate a FlexRadio** that the PGXL connects to.
 
-**Critical Constraint:** The PGXL will NOT enable PTT via LAN when paired with a FlexRadio. Hard-wired PTT from the TCI radio to the PGXL is required.
+**Key Insight:** When configured with `ptt=LAN`, the PGXL keys based on the slice `tx=1` status update - no physical PTT cable required. This is 100% LAN-based control.
 
 ---
 
@@ -53,77 +53,71 @@ This failed because:
 
 ### How FlexRadio-PGXL Integration Works
 
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#3b82f6', 'primaryTextColor': '#fff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#6b7280', 'secondaryColor': '#22c55e', 'tertiaryColor': '#f97316'}}}%%
+sequenceDiagram
+    participant FR as FlexRadio<br/>6600/6700
+    participant PGXL as PGXL Amplifier<br/>(Listening for paired serial)
+
+    Note over FR: Broadcasts every ~1 second
+    FR->>PGXL: UDP 4991: VITA-49 Discovery<br/>"serial=1234..."
+
+    Note over PGXL: "That's my radio!"
+    PGXL->>FR: TCP Connect to port 4992
+
+    Note over PGXL: Registration Phase
+    PGXL->>FR: amplifier create ip=... model=PowerGeniusXL
+    PGXL->>FR: meter create name=FWD type=AMP
+    PGXL->>FR: interlock create type=AMP
+    PGXL->>FR: keepalive enable
+    PGXL->>FR: sub slice all
+
+    Note over FR: Slice Status Updates
+    FR->>PGXL: S|slice 0 RF_frequency=14.250 mode=USB tx=0
+
+    Note over FR: User presses PTT
+    FR->>PGXL: S|slice 0 tx=1
+    Note over PGXL: PGXL KEYS!<br/>(via LAN, no cable)
+
+    FR->>PGXL: S|slice 0 tx=0
+    Note over PGXL: PGXL unkeys
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         FLEXRADIO INTEGRATION FLOW                          │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌──────────────┐    UDP 4991 (Discovery)     ┌──────────────────┐        │
-│   │  FlexRadio   │ ────────────────────────►   │       PGXL       │        │
-│   │  6600/6700   │    VITA-49 Broadcast        │  (Listening for  │        │
-│   │              │    "serial=1234..."         │   paired serial) │        │
-│   └──────────────┘                             └──────────────────┘        │
-│          │                                              │                   │
-│          │                                              │ "That's my radio!"│
-│          │                                              ▼                   │
-│          │◄───────────────────────────────────  TCP Connect to 4992        │
-│          │                                                                  │
-│          │    PGXL sends:                                                   │
-│          │    - amplifier create ip=... model=PowerGeniusXL serial=...     │
-│          │    - meter create name=FWD type=AMP ...                         │
-│          │    - interlock create type=AMP ...                              │
-│          │    - keepalive enable                                           │
-│          │    - sub slice all                                              │
-│          │                                                                  │
-│          │    FlexRadio sends:                                             │
-│          │    - S|slice 0 RF_frequency=14.250 mode=USB tx=0               │
-│          │    - S|slice 0 tx=1  (PTT pressed)                             │
-│          │                                                                  │
-│   ┌──────┴──────┐                              ┌──────────────────┐        │
-│   │   CRITICAL  │                              │                  │        │
-│   │             │                              │   PTT via LAN    │        │
-│   │ PTT via LAN │    When paired with Flex:    │   is DISABLED    │        │
-│   │ is DISABLED │    Hard-wired PTT required!  │                  │        │
-│   │             │                              │                  │        │
-│   └─────────────┘                              └──────────────────┘        │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+
+> **100% LAN Control:** When `ptt=LAN` is configured, the slice `tx=1` status update keys the amplifier. No physical PTT cable required!
 
 ### Proposed Solution: FlexRadio Emulator
 
 To integrate TCI radios with PGXL, Log4YM will emulate a FlexRadio:
 
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#3b82f6', 'primaryTextColor': '#fff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#6b7280', 'secondaryColor': '#22c55e', 'tertiaryColor': '#f97316'}}}%%
+flowchart TB
+    subgraph TCI["TCI Radio (ExpertSDR3 / Thetis)"]
+        RADIO[("📻 SDR Radio")]
+    end
+
+    subgraph Log4YM["Log4YM Server"]
+        TCISVC["TciRadioService<br/>WebSocket Client"]
+        FLEXEMU["FlexRadio Emulator<br/>━━━━━━━━━━━━━━━━━━<br/>• UDP Discovery (4991)<br/>• TCP API Server (4992)<br/>• Slice Status Updates<br/>• tx=1 → PTT via LAN!"]
+    end
+
+    subgraph Amp["PGXL Amplifier"]
+        PGXL[("⚡ PowerGenius XL")]
+    end
+
+    RADIO -- "WebSocket 50001<br/>TCI Protocol<br/>freq, mode, trx" --> TCISVC
+    TCISVC -- "State Changes" --> FLEXEMU
+    FLEXEMU -- "UDP 4991<br/>VITA-49 Discovery" --> PGXL
+    PGXL -- "TCP 4992<br/>PGXL connects as client" --> FLEXEMU
+    FLEXEMU -- "S|slice 0 tx=1<br/>→ PGXL KEYS!" --> PGXL
+
+    style RADIO fill:#8b5cf6,stroke:#6d28d9,color:#fff
+    style TCISVC fill:#22c55e,stroke:#16a34a,color:#fff
+    style FLEXEMU fill:#3b82f6,stroke:#1d4ed8,color:#fff
+    style PGXL fill:#f97316,stroke:#ea580c,color:#fff
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           TCI-PGXL INTEGRATION                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   ┌──────────────┐                             ┌──────────────────┐        │
-│   │  TCI Radio   │    WebSocket (50001)        │     Log4YM       │        │
-│   │  ExpertSDR3  │ ───────────────────────►    │     Server       │        │
-│   │  Thetis      │    TCI Protocol             │                  │        │
-│   └──────────────┘    freq, mode, trx          └────────┬─────────┘        │
-│          │                                              │                   │
-│          │                                              │                   │
-│   Hard-wired PTT                                        ▼                   │
-│   (Required!)                          ┌────────────────────────────────┐  │
-│          │                             │   FlexRadio Emulator Service   │  │
-│          │                             │                                │  │
-│          │                             │   - Broadcasts UDP discovery   │  │
-│          │                             │   - Accepts TCP on port 4992   │  │
-│          │                             │   - Responds to FLEX API       │  │
-│          │                             │   - Sends slice status updates │  │
-│          ▼                             └────────────────┬───────────────┘  │
-│   ┌──────────────┐                                      │                   │
-│   │     PGXL     │◄─────────────────────────────────────┘                   │
-│   │  Amplifier   │    UDP 4991 (Discovery)                                  │
-│   │              │    TCP 4992 (PGXL connects as client)                    │
-│   │              │    S|slice 0 RF_frequency=14.250 tx=1                    │
-│   └──────────────┘                                                          │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+
+> **No physical PTT cable needed** - just Ethernet + coax. The emulator sends `tx=1` and the PGXL keys via LAN!
 
 ---
 
@@ -179,49 +173,79 @@ S0|slice 0 RF_frequency=7.150000 mode=LSB tx=0            // Band change
 
 ## PTT Considerations
 
-### Critical Constraint
+### LAN PTT Mode
 
-From the PGXL API documentation:
+When configured with `ptt=LAN`, the PGXL keys based on the slice `tx=1` status update from the FlexRadio (or our emulator). This is 100% network-based with no physical PTT cable.
 
-> "Note the amplifier will not enable PTT via the LAN mechanism if paired with a FLEX transceiver."
+From FlexRadio documentation:
+> "When driven by a FLEX-6000 Signature Series transceiver, the amplifier can be keyed over the radio's LAN connection."
+>
+> "No other physical connections are needed for the Flex-6000 and PGXL."
 
-This means:
-- **Hard-wired PTT is REQUIRED** between the TCI radio and PGXL
-- The emulator's `tx=1` updates inform the PGXL about band selection for TX
-- The physical PTT line triggers the actual amplifier keying
+### PTT Timing Diagram (100% LAN)
 
-### PTT Timing Diagram
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#3b82f6', 'primaryTextColor': '#fff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#6b7280', 'secondaryColor': '#22c55e', 'tertiaryColor': '#f97316'}}}%%
+sequenceDiagram
+    participant TCI as TCI Radio<br/>(WebSocket)
+    participant L4Y as Log4YM<br/>Server
+    participant EMU as FlexRadio<br/>Emulator
+    participant PGXL as PGXL<br/>Amplifier
 
+    Note over TCI: User presses PTT
+    TCI->>L4Y: trx:0,true;
+    L4Y->>EMU: TX state changed
+    EMU->>PGXL: TCP: S|slice 0 tx=1
+    Note over PGXL: ⚡ PGXL KEYS!<br/>(via LAN)
+
+    Note over TCI: User releases PTT
+    TCI->>L4Y: trx:0,false;
+    L4Y->>EMU: TX state changed
+    EMU->>PGXL: TCP: S|slice 0 tx=0
+    Note over PGXL: PGXL unkeys
 ```
-TCI Radio PTT Pressed:
 
-    TCI WebSocket      Log4YM Server      FlexEmulator        PGXL
-         │                  │                  │                │
-         │  trx:0,true;     │                  │                │
-         │─────────────────►│                  │                │
-         │                  │  Send slice tx=1 │                │
-         │                  │─────────────────►│                │
-         │                  │                  │ TCP: S|slice tx=1
-         │                  │                  │───────────────►│
-         │                  │                  │                │ Band ready
-         │                  │                  │                │
-    ─────┴──────────────────┴──────────────────┴────────────────┴─────
-              Hard-wired PTT line (immediate, no latency)
-    ─────┬──────────────────┬──────────────────┬────────────────┬─────
-         │                  │                  │                │
-         │                  │                  │                │ PTT Active
-```
+### Timing Concerns
 
-### Why Hard-Wired PTT is Safe
+Network latency could affect PTT timing. FlexRadio users report:
+- TX Delay setting of 40ms recommended to prevent hot-switching
+- Some CW operators report 150ms delay issues with LAN PTT
 
-The hard-wired PTT approach is actually safer:
-1. **No network latency** - PTT transitions are immediate
-2. **PGXL internal delay** - PTT-in doesn't reflect to PTT-out until amp is ready
-3. **Failsafe** - If network fails, amplifier won't key (no hot switching)
+**Mitigations:**
+1. Send `tx=1` as soon as TCI reports `trx:0,true;`
+2. Consider sending band data preemptively when TX slice is selected
+3. The PGXL has internal relay timing that provides some protection
 
 ---
 
 ## Implementation Plan
+
+### PGXL Connection State Machine
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#3b82f6', 'primaryTextColor': '#fff'}}}%%
+stateDiagram-v2
+    [*] --> Disabled: Emulator disabled
+
+    Disabled --> Broadcasting: Enable FlexEmulator
+    Broadcasting --> WaitingForPGXL: Sending VITA-49 Discovery
+
+    WaitingForPGXL --> Connected: PGXL connects via TCP
+    WaitingForPGXL --> Broadcasting: No connection (keep broadcasting)
+
+    Connected --> Registered: PGXL sends amplifier create
+    Registered --> Monitoring: PGXL subscribes to slices
+
+    Monitoring --> Keying: tx=1 sent to PGXL
+    Keying --> Monitoring: tx=0 sent to PGXL
+
+    Monitoring --> Reconnecting: TCP connection lost
+    Reconnecting --> WaitingForPGXL: Restart discovery
+    Reconnecting --> Disabled: Max retries exceeded
+
+    Connected --> Disabled: User disables emulator
+    Monitoring --> Disabled: User disables emulator
+```
 
 ### Phase 1: FlexRadio Emulator Service
 
@@ -276,6 +300,66 @@ Add UI to configure the PGXL to pair with the emulated radio:
    ```
 3. **PGXL reboots** and discovers the emulated radio
 
+### Component Architecture
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#3b82f6', 'primaryTextColor': '#fff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#6b7280', 'secondaryColor': '#22c55e', 'tertiaryColor': '#f97316'}}}%%
+flowchart TB
+    subgraph Frontend["React Frontend"]
+        PGXLUI["PgxlPlugin.tsx<br/>━━━━━━━━━━━━━━━━<br/>• Emulator enable/disable<br/>• Serial configuration<br/>• PGXL pairing button<br/>• Connection status"]
+        RADIOUI["RadioPlugin.tsx<br/>━━━━━━━━━━━━━━━━<br/>• TCI connection settings<br/>• Radio status display"]
+    end
+
+    subgraph Backend["ASP.NET Core Backend"]
+        HUB["LogHub.cs<br/>(SignalR)"]
+        TCISVC["TciRadioService<br/>━━━━━━━━━━━━━━━━<br/>• WebSocket client<br/>• Parse TCI messages<br/>• Track freq/mode/tx"]
+        FLEXEMU["FlexEmulatorService<br/>━━━━━━━━━━━━━━━━<br/>• UDP Discovery broadcast<br/>• TCP API server (4992)<br/>• Handle PGXL commands<br/>• Send slice status"]
+        PGXLSVC["PgxlService<br/>━━━━━━━━━━━━━━━━<br/>• Configure pairing<br/>• Monitor PGXL status"]
+    end
+
+    subgraph External["External Devices"]
+        TCI[("📻 TCI Radio<br/>ExpertSDR3")]
+        PGXL[("⚡ PGXL<br/>Amplifier")]
+    end
+
+    PGXLUI <--> HUB
+    RADIOUI <--> HUB
+    HUB <--> TCISVC
+    HUB <--> FLEXEMU
+    HUB <--> PGXLSVC
+
+    TCI -- "WebSocket 50001" --> TCISVC
+    TCISVC -- "State changes" --> FLEXEMU
+    FLEXEMU -- "UDP 4991 Discovery" --> PGXL
+    PGXL -- "TCP 4992 (client)" --> FLEXEMU
+    PGXLSVC -- "TCP 9008" --> PGXL
+
+    style PGXLUI fill:#f97316,stroke:#ea580c,color:#fff
+    style RADIOUI fill:#f97316,stroke:#ea580c,color:#fff
+    style HUB fill:#22c55e,stroke:#16a34a,color:#fff
+    style TCISVC fill:#22c55e,stroke:#16a34a,color:#fff
+    style FLEXEMU fill:#3b82f6,stroke:#1d4ed8,color:#fff
+    style PGXLSVC fill:#22c55e,stroke:#16a34a,color:#fff
+    style TCI fill:#8b5cf6,stroke:#6d28d9,color:#fff
+    style PGXL fill:#ef4444,stroke:#dc2626,color:#fff
+```
+
+### Implementation Tasks
+
+| Phase | Task | Description | Priority |
+|-------|------|-------------|----------|
+| 1 | FLEX-EMU-1 | Create `FlexEmulatorService` skeleton with DI | P0 |
+| 1 | FLEX-EMU-2 | Implement VITA-49 discovery packet generation | P0 |
+| 1 | FLEX-EMU-3 | Implement UDP broadcast on port 4991 | P0 |
+| 1 | FLEX-EMU-4 | Implement TCP server on port 4992 | P0 |
+| 1 | FLEX-EMU-5 | Handle PGXL registration commands | P0 |
+| 2 | BRIDGE-1 | Wire TCI frequency changes to emulator | P0 |
+| 2 | BRIDGE-2 | Wire TCI TX state to emulator | P0 |
+| 2 | BRIDGE-3 | Send slice status messages to PGXL | P0 |
+| 3 | UI-1 | Add emulator settings to PGXL plugin | P1 |
+| 3 | UI-2 | Add "Configure as TCI Amp" button | P1 |
+| 3 | UI-3 | Show emulator connection status | P1 |
+
 ---
 
 ## Configuration
@@ -303,38 +387,57 @@ Add UI to configure the PGXL to pair with the emulated radio:
 3. **Configure PGXL** to pair with emulated serial:
    - Open PGXL Settings in Log4YM
    - Click "Configure as TCI Amplifier"
-   - This sends the `flexradio ampslice=A serial=... active=1` command
+   - This sends the `flexradio ampslice=A serial=... txant=ANT1 ptt=LAN active=1` command
    - PGXL reboots automatically
-4. **Connect hard-wired PTT** from TCI radio to PGXL PTT-IN
-5. **Test**: Change frequency on TCI radio, verify PGXL shows correct band
+4. **Test**:
+   - Change frequency on TCI radio, verify PGXL shows correct band
+   - Key TCI radio, verify PGXL keys via LAN (no PTT cable needed!)
 
 ### Normal Operation
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                    NORMAL OPERATION FLOW                       │
-├────────────────────────────────────────────────────────────────┤
-│                                                                │
-│  1. Log4YM starts FlexEmulator                                 │
-│     └── Broadcasts discovery packets every 1 second           │
-│                                                                │
-│  2. PGXL discovers "emulated FlexRadio"                        │
-│     └── Connects via TCP to port 4992                         │
-│     └── Registers as amplifier                                │
-│     └── Subscribes to slice updates                           │
-│                                                                │
-│  3. TCI radio connected to Log4YM                              │
-│     └── Frequency changes pushed to FlexEmulator              │
-│     └── FlexEmulator sends S|slice 0 RF_frequency=...         │
-│     └── PGXL switches band automatically                      │
-│                                                                │
-│  4. User presses PTT on TCI radio                              │
-│     └── Hard-wired PTT activates PGXL immediately             │
-│     └── TCI sends trx:0,true; to Log4YM                       │
-│     └── FlexEmulator sends S|slice 0 tx=1                     │
-│     └── PGXL already keyed via hard-wire, now has band info   │
-│                                                                │
-└────────────────────────────────────────────────────────────────┘
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#3b82f6', 'primaryTextColor': '#fff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#6b7280', 'secondaryColor': '#22c55e', 'tertiaryColor': '#f97316'}}}%%
+flowchart TD
+    subgraph Phase1["1️⃣ Startup"]
+        A[Log4YM starts FlexEmulator] --> B[Broadcasts VITA-49 discovery<br/>every 1 second]
+    end
+
+    subgraph Phase2["2️⃣ PGXL Discovery"]
+        C[PGXL discovers emulated radio] --> D[Connects via TCP to port 4992]
+        D --> E[Registers as amplifier]
+        E --> F[Subscribes to slice updates]
+    end
+
+    subgraph Phase3["3️⃣ TCI Radio Connected"]
+        G[TCI radio connects to Log4YM] --> H[Frequency changes pushed<br/>to FlexEmulator]
+        H --> I["FlexEmulator sends<br/>S|slice 0 RF_frequency=..."]
+        I --> J[PGXL switches band<br/>automatically]
+    end
+
+    subgraph Phase4["4️⃣ PTT Operation"]
+        K[User presses PTT on TCI] --> L["TCI sends trx:0,true;"]
+        L --> M["FlexEmulator sends<br/>S|slice 0 tx=1"]
+        M --> N["⚡ PGXL keys via LAN!<br/>(no PTT cable)"]
+    end
+
+    Phase1 --> Phase2
+    Phase2 --> Phase3
+    Phase3 --> Phase4
+
+    style A fill:#3b82f6,stroke:#1d4ed8,color:#fff
+    style B fill:#3b82f6,stroke:#1d4ed8,color:#fff
+    style C fill:#f97316,stroke:#ea580c,color:#fff
+    style D fill:#f97316,stroke:#ea580c,color:#fff
+    style E fill:#f97316,stroke:#ea580c,color:#fff
+    style F fill:#f97316,stroke:#ea580c,color:#fff
+    style G fill:#8b5cf6,stroke:#6d28d9,color:#fff
+    style H fill:#8b5cf6,stroke:#6d28d9,color:#fff
+    style I fill:#8b5cf6,stroke:#6d28d9,color:#fff
+    style J fill:#8b5cf6,stroke:#6d28d9,color:#fff
+    style K fill:#22c55e,stroke:#16a34a,color:#fff
+    style L fill:#22c55e,stroke:#16a34a,color:#fff
+    style M fill:#22c55e,stroke:#16a34a,color:#fff
+    style N fill:#22c55e,stroke:#16a34a,color:#fff
 ```
 
 ---
@@ -346,7 +449,8 @@ Add UI to configure the PGXL to pair with the emulated radio:
 Use BCD parallel interface for band data:
 - **Pro:** Simple, no emulation needed
 - **Con:** Requires additional hardware (BCD encoder)
-- **Con:** No computer needed, but defeats LAN-only goal
+- **Con:** Still needs hard-wired PTT
+- **Con:** Defeats LAN-only goal
 
 ### Option B: CAT Serial (Rejected)
 
@@ -354,15 +458,17 @@ Use CAT/CIV serial for band data:
 - **Pro:** Supported by many radios
 - **Con:** Requires USB serial adapter
 - **Con:** TCI radios don't have native CAT output
+- **Con:** Still needs hard-wired PTT
 
 ### Option C: FlexRadio Emulation (Selected)
 
 Emulate a FlexRadio on the network:
-- **Pro:** Pure LAN solution (plus hard-wired PTT)
-- **Pro:** Uses existing PGXL infrastructure
-- **Pro:** No additional hardware
+- **Pro:** 100% LAN solution - no PTT cable needed!
+- **Pro:** Uses existing PGXL infrastructure (designed for this)
+- **Pro:** No additional hardware (just Ethernet + coax)
+- **Pro:** Band AND PTT both via LAN
 - **Con:** More complex implementation
-- **Con:** Hard-wired PTT still required
+- **Con:** Potential network latency on PTT (mitigated by TX delay settings)
 
 ---
 
@@ -370,10 +476,11 @@ Emulate a FlexRadio on the network:
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| PGXL firmware rejects non-Flex client | Medium | High | Test with actual PGXL hardware |
-| Network latency affects band switching | Low | Medium | Send band updates immediately on TCI change |
-| User forgets hard-wired PTT | High | High | Clear warning in UI, documentation |
-| Discovery packet format changes | Low | Low | Monitor FlexRadio updates |
+| PGXL firmware rejects non-Flex emulator | Medium | High | Test with actual PGXL hardware |
+| Network latency affects PTT timing | Medium | Medium | Configure TX delay (40ms+), optimize code path |
+| Discovery packet format changes | Low | Low | Monitor FlexRadio firmware updates |
+| CW/contest operators need lower latency | Medium | Medium | Offer hard-wired PTT as fallback option |
+| PGXL doesn't recognize emulated serial | Low | High | Use realistic serial format, test thoroughly |
 
 ---
 
@@ -396,9 +503,11 @@ Emulate a FlexRadio on the network:
 - [ ] PGXL connects to emulator via TCP
 - [ ] Frequency change on TCI radio updates PGXL band
 - [ ] Mode change on TCI radio (if applicable)
-- [ ] Hard-wired PTT keys amplifier correctly
-- [ ] Network disconnect doesn't cause TX issues
+- [ ] **LAN PTT keys amplifier** (tx=1 → PGXL keys, no cable)
+- [ ] PTT latency is acceptable (<100ms for SSB)
+- [ ] Network disconnect doesn't cause TX issues (failsafe)
 - [ ] PGXL reconnects after network interruption
+- [ ] Band changes work while transmitting (if applicable)
 
 ---
 
@@ -407,11 +516,17 @@ Emulate a FlexRadio on the network:
 1. **Q:** Does PGXL validate the FlexRadio model or just the serial?
    **A:** TBD - needs testing with actual hardware.
 
-2. **Q:** Can we avoid the hard-wired PTT requirement?
-   **A:** Not when paired with FlexRadio. The PGXL firmware explicitly disables LAN PTT in this mode. Alternative would be to NOT pair with FlexRadio and use BCD/CAT, but that defeats the LAN-only goal.
+2. **Q:** What is the minimum acceptable PTT latency for different modes?
+   **A:** SSB/digital modes are tolerant of 50-100ms. CW contesters report issues above 150ms. Need to measure actual latency in implementation.
 
 3. **Q:** What happens if both TCI and real FlexRadio are on the network?
    **A:** The PGXL will only connect to the radio with the paired serial number.
+
+4. **Q:** What VITA-49 fields are actually required for PGXL discovery?
+   **A:** Need to test minimum viable discovery packet. May only need serial, IP, port.
+
+5. **Q:** Does the PGXL validate the source IP of slice status messages?
+   **A:** TBD - if so, emulator must bind to correct interface.
 
 ---
 
