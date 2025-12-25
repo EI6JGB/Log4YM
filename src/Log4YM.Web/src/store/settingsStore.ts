@@ -92,6 +92,8 @@ interface SettingsState {
   saveSettings: () => Promise<void>;
   loadSettings: () => Promise<void>;
   resetSettings: () => void;
+  // Reset loaded state (for reconnection scenarios)
+  setNotLoaded: () => void;
 }
 
 const defaultSettings: Settings = {
@@ -293,4 +295,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
       settings: defaultSettings,
       isDirty: true,
     }),
+
+  // Reset loaded state (for reconnection scenarios - prevents saving stale data)
+  setNotLoaded: () => set({ isLoaded: false }),
 }));

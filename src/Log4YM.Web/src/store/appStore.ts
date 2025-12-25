@@ -13,10 +13,21 @@ import type {
   SmartUnlinkRadioAddedEvent,
 } from '../api/signalr';
 
+// Connection state enum for detailed tracking
+// - disconnected: No connection to backend
+// - connecting: Initial connection attempt
+// - reconnecting: Attempting to reconnect after disconnect
+// - rehydrating: Connected, but reloading all data (settings, device states, etc.)
+// - connected: Fully connected and all data loaded
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'rehydrating';
+
 interface AppState {
   // Connection status
   isConnected: boolean;
+  connectionState: ConnectionState;
+  reconnectAttempt: number;
   setConnected: (connected: boolean) => void;
+  setConnectionState: (state: ConnectionState, attempt?: number) => void;
 
   // Current focused callsign
   focusedCallsign: string | null;
@@ -98,7 +109,18 @@ export interface QrzSyncProgress {
 export const useAppStore = create<AppState>((set) => ({
   // Connection
   isConnected: false,
-  setConnected: (connected) => set({ isConnected: connected }),
+  connectionState: 'disconnected' as ConnectionState,
+  reconnectAttempt: 0,
+  setConnected: (connected) => set({
+    isConnected: connected,
+    connectionState: connected ? 'connected' : 'disconnected',
+    reconnectAttempt: connected ? 0 : undefined, // Keep attempt count when disconnected
+  }),
+  setConnectionState: (state, attempt) => set({
+    connectionState: state,
+    isConnected: state === 'connected',
+    reconnectAttempt: attempt ?? 0,
+  }),
 
   // Focused callsign
   focusedCallsign: null,

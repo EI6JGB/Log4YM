@@ -1,9 +1,9 @@
-import { Radio, Wifi, WifiOff, MapPin, Clock } from 'lucide-react';
+import { Radio, Wifi, WifiOff, MapPin, Clock, Loader2 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { useEffect, useState } from 'react';
 
 export function StatusBar() {
-  const { isConnected, stationCallsign, stationGrid, rigStatus } = useAppStore();
+  const { connectionState, reconnectAttempt, stationCallsign, stationGrid, rigStatus } = useAppStore();
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -58,12 +58,33 @@ export function StatusBar() {
         </div>
 
         <div className="flex items-center gap-2">
-          {isConnected ? (
+          {connectionState === 'connected' && (
             <>
               <Wifi className="w-4 h-4 text-accent-success" />
               <span className="text-accent-success text-xs">Connected</span>
             </>
-          ) : (
+          )}
+          {connectionState === 'connecting' && (
+            <>
+              <Loader2 className="w-4 h-4 text-accent-info animate-spin" />
+              <span className="text-accent-info text-xs">Connecting...</span>
+            </>
+          )}
+          {connectionState === 'reconnecting' && (
+            <>
+              <Loader2 className="w-4 h-4 text-accent-warning animate-spin" />
+              <span className="text-accent-warning text-xs">
+                Reconnecting{reconnectAttempt > 0 ? ` (${reconnectAttempt})` : '...'}
+              </span>
+            </>
+          )}
+          {connectionState === 'rehydrating' && (
+            <>
+              <Loader2 className="w-4 h-4 text-accent-info animate-spin" />
+              <span className="text-accent-info text-xs">Loading data...</span>
+            </>
+          )}
+          {connectionState === 'disconnected' && (
             <>
               <WifiOff className="w-4 h-4 text-accent-danger" />
               <span className="text-accent-danger text-xs">Disconnected</span>
