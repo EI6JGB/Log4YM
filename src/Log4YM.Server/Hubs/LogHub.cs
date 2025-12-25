@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.SignalR;
 using Log4YM.Contracts.Events;
 using Log4YM.Server.Services;
 using Log4YM.Server.Core.Database;
+using Log4YM.Server.Native.Hamlib;
 
 namespace Log4YM.Server.Hubs;
 
@@ -33,6 +34,13 @@ public interface ILogHubClient
     Task OnRadioConnectionStateChanged(RadioConnectionStateChangedEvent evt);
     Task OnRadioStateChanged(RadioStateChangedEvent evt);
     Task OnRadioSlicesUpdated(RadioSlicesUpdatedEvent evt);
+
+    // Hamlib configuration events
+    Task OnHamlibRigList(HamlibRigListEvent evt);
+    Task OnHamlibRigCaps(HamlibRigCapsEvent evt);
+    Task OnHamlibSerialPorts(HamlibSerialPortsEvent evt);
+    Task OnHamlibConfigLoaded(HamlibConfigLoadedEvent evt);
+    Task OnHamlibStatus(HamlibStatusEvent evt);
 
     // SmartUnlink events
     Task OnSmartUnlinkRadioAdded(SmartUnlinkRadioAddedEvent evt);
@@ -301,7 +309,7 @@ public class LogHub : Hub<ILogHubClient>
     {
         _logger.LogInformation("Connecting to radio {RadioId}", cmd.RadioId);
 
-        // Try FlexRadio first, then TCI, then Hamlib
+        // Try FlexRadio first, then TCI (Hamlib is handled separately via config)
         if (_flexRadioService.HasRadio(cmd.RadioId))
         {
             await _flexRadioService.ConnectAsync(cmd.RadioId);
@@ -310,9 +318,9 @@ public class LogHub : Hub<ILogHubClient>
         {
             await _tciRadioService.ConnectAsync(cmd.RadioId);
         }
-        else if (_hamlibService.HasRadio(cmd.RadioId))
+        else if (cmd.RadioId == _hamlibService.RadioId)
         {
-            // Hamlib radios are already connected when added
+            // Hamlib radio is already connected when configured
             _logger.LogDebug("Hamlib radio {RadioId} is already connected", cmd.RadioId);
         }
         else
@@ -333,28 +341,177 @@ public class LogHub : Hub<ILogHubClient>
         {
             await _tciRadioService.DisconnectAsync(cmd.RadioId);
         }
-        else if (_hamlibService.HasRadio(cmd.RadioId))
+        else if (cmd.RadioId == _hamlibService.RadioId)
         {
-            await _hamlibService.DisconnectAsync(cmd.RadioId);
+            await _hamlibService.DisconnectAsync();
+        }
+    }
+
+    // ===== Hamlib Configuration Methods =====
+
+    /// <summary>
+    /// Get list of all available Hamlib rig models
+    /// </summary>
+    public async Task GetHamlibRigList()
+    {
+        _logger.LogDebug("Client requested Hamlib rig list");
+
+        var rigs = _hamlibService.GetAvailableRigs()
+            .Select(r => new HamlibRigModelInfo(r.ModelId, r.Manufacturer, r.Model, r.Version, r.DisplayName))
+            .ToList();
+
+        await Clients.Caller.OnHamlibRigList(new HamlibRigListEvent(rigs));
+    }
+
+    /// <summary>
+    /// Get capabilities for a specific Hamlib rig model
+    /// </summary>
+    public async Task GetHamlibRigCaps(int modelId)
+    {
+        _logger.LogDebug("Client requested Hamlib rig caps for model {ModelId}", modelId);
+
+        var caps = _hamlibService.GetRigCapabilities(modelId);
+        var capsDto = new HamlibRigCapabilities(
+            caps.CanGetFreq,
+            caps.CanGetMode,
+            caps.CanGetVfo,
+            caps.CanGetPtt,
+            caps.CanGetPower,
+            caps.CanGetRit,
+            caps.CanGetXit,
+            caps.CanGetKeySpeed,
+            caps.CanSendMorse,
+            caps.DefaultDataBits,
+            caps.DefaultStopBits,
+            caps.IsNetworkOnly
+        );
+
+        await Clients.Caller.OnHamlibRigCaps(new HamlibRigCapsEvent(modelId, capsDto));
+    }
+
+    /// <summary>
+    /// Get list of available serial ports
+    /// </summary>
+    public async Task GetHamlibSerialPorts()
+    {
+        _logger.LogDebug("Client requested serial ports list");
+
+        var ports = _hamlibService.GetSerialPorts();
+        await Clients.Caller.OnHamlibSerialPorts(new HamlibSerialPortsEvent(ports));
+    }
+
+    /// <summary>
+    /// Get saved Hamlib configuration
+    /// </summary>
+    public async Task GetHamlibConfig()
+    {
+        _logger.LogDebug("Client requested Hamlib config");
+
+        var config = await _hamlibService.LoadConfigAsync();
+        HamlibRigConfigDto? configDto = null;
+
+        if (config != null)
+        {
+            configDto = new HamlibRigConfigDto(
+                config.ModelId,
+                config.ModelName,
+                (Contracts.Events.HamlibConnectionType)(int)config.ConnectionType,
+                config.SerialPort,
+                config.BaudRate,
+                (Contracts.Events.HamlibDataBits)(int)config.DataBits,
+                (Contracts.Events.HamlibStopBits)(int)config.StopBits,
+                (Contracts.Events.HamlibFlowControl)(int)config.FlowControl,
+                (Contracts.Events.HamlibParity)(int)config.Parity,
+                config.Hostname,
+                config.NetworkPort,
+                (Contracts.Events.HamlibPttType)(int)config.PttType,
+                config.PttPort,
+                config.GetFrequency,
+                config.GetMode,
+                config.GetVfo,
+                config.GetPtt,
+                config.GetPower,
+                config.GetRit,
+                config.GetXit,
+                config.GetKeySpeed,
+                config.PollIntervalMs
+            );
+        }
+
+        await Clients.Caller.OnHamlibConfigLoaded(new HamlibConfigLoadedEvent(configDto));
+    }
+
+    /// <summary>
+    /// Get Hamlib initialization status
+    /// </summary>
+    public async Task GetHamlibStatus()
+    {
+        _logger.LogDebug("Client requested Hamlib status");
+
+        await Clients.Caller.OnHamlibStatus(new HamlibStatusEvent(
+            _hamlibService.IsInitialized,
+            _hamlibService.IsConnected,
+            _hamlibService.RadioId,
+            null
+        ));
+    }
+
+    /// <summary>
+    /// Connect to a Hamlib rig with full configuration
+    /// </summary>
+    public async Task ConnectHamlibRig(HamlibRigConfigDto configDto)
+    {
+        _logger.LogInformation("Connecting to Hamlib rig: {ModelName}", configDto.ModelName);
+
+        var config = new HamlibRigConfig
+        {
+            ModelId = configDto.ModelId,
+            ModelName = configDto.ModelName,
+            ConnectionType = (Native.Hamlib.HamlibConnectionType)(int)configDto.ConnectionType,
+            SerialPort = configDto.SerialPort,
+            BaudRate = configDto.BaudRate,
+            DataBits = (Native.Hamlib.HamlibDataBits)(int)configDto.DataBits,
+            StopBits = (Native.Hamlib.HamlibStopBits)(int)configDto.StopBits,
+            FlowControl = (Native.Hamlib.HamlibFlowControl)(int)configDto.FlowControl,
+            Parity = (Native.Hamlib.HamlibParity)(int)configDto.Parity,
+            Hostname = configDto.Hostname,
+            NetworkPort = configDto.NetworkPort,
+            PttType = (Native.Hamlib.HamlibPttType)(int)configDto.PttType,
+            PttPort = configDto.PttPort,
+            GetFrequency = configDto.GetFrequency,
+            GetMode = configDto.GetMode,
+            GetVfo = configDto.GetVfo,
+            GetPtt = configDto.GetPtt,
+            GetPower = configDto.GetPower,
+            GetRit = configDto.GetRit,
+            GetXit = configDto.GetXit,
+            GetKeySpeed = configDto.GetKeySpeed,
+            PollIntervalMs = configDto.PollIntervalMs
+        };
+
+        try
+        {
+            await _hamlibService.ConnectAsync(config);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to connect Hamlib rig");
+            await Clients.Caller.OnHamlibStatus(new HamlibStatusEvent(
+                _hamlibService.IsInitialized,
+                false,
+                null,
+                ex.Message
+            ));
         }
     }
 
     /// <summary>
-    /// Connect to a rigctld instance (Hamlib daemon)
+    /// Disconnect from the Hamlib rig
     /// </summary>
-    public async Task ConnectHamlib(string host, int port = 4532, string? name = null)
+    public async Task DisconnectHamlibRig()
     {
-        _logger.LogInformation("Connecting to rigctld at {Host}:{Port}", host, port);
-        await _hamlibService.ConnectAsync(host, port, name);
-    }
-
-    /// <summary>
-    /// Disconnect from a rigctld instance
-    /// </summary>
-    public async Task DisconnectHamlib(string radioId)
-    {
-        _logger.LogInformation("Disconnecting from rigctld {RadioId}", radioId);
-        await _hamlibService.DisconnectAsync(radioId);
+        _logger.LogInformation("Disconnecting from Hamlib rig");
+        await _hamlibService.DisconnectAsync();
     }
 
     /// <summary>

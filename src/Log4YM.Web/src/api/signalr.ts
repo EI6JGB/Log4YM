@@ -289,6 +289,88 @@ export interface SelectRadioInstanceCommand {
   instance: number;
 }
 
+// Hamlib Configuration types
+export type HamlibConnectionType = 'Serial' | 'Network';
+export type HamlibDataBits = 5 | 6 | 7 | 8;
+export type HamlibStopBits = 1 | 2;
+export type HamlibFlowControl = 'None' | 'Hardware' | 'Software';
+export type HamlibParity = 'None' | 'Even' | 'Odd' | 'Mark' | 'Space';
+export type HamlibPttType = 'None' | 'Rig' | 'Dtr' | 'Rts';
+
+export interface HamlibRigModelInfo {
+  modelId: number;
+  manufacturer: string;
+  model: string;
+  version: string;
+  displayName: string;
+}
+
+export interface HamlibRigCapabilities {
+  canGetFreq: boolean;
+  canGetMode: boolean;
+  canGetVfo: boolean;
+  canGetPtt: boolean;
+  canGetPower: boolean;
+  canGetRit: boolean;
+  canGetXit: boolean;
+  canGetKeySpeed: boolean;
+  canSendMorse: boolean;
+  defaultDataBits: number;
+  defaultStopBits: number;
+  isNetworkOnly: boolean;
+}
+
+export interface HamlibRigConfigDto {
+  modelId: number;
+  modelName: string;
+  connectionType: HamlibConnectionType;
+  serialPort?: string;
+  baudRate: number;
+  dataBits: HamlibDataBits;
+  stopBits: HamlibStopBits;
+  flowControl: HamlibFlowControl;
+  parity: HamlibParity;
+  hostname?: string;
+  networkPort: number;
+  pttType: HamlibPttType;
+  pttPort?: string;
+  getFrequency: boolean;
+  getMode: boolean;
+  getVfo: boolean;
+  getPtt: boolean;
+  getPower: boolean;
+  getRit: boolean;
+  getXit: boolean;
+  getKeySpeed: boolean;
+  pollIntervalMs: number;
+}
+
+export interface HamlibRigListEvent {
+  rigs: HamlibRigModelInfo[];
+}
+
+export interface HamlibRigCapsEvent {
+  modelId: number;
+  capabilities: HamlibRigCapabilities;
+}
+
+export interface HamlibSerialPortsEvent {
+  ports: string[];
+}
+
+export interface HamlibConfigLoadedEvent {
+  config: HamlibRigConfigDto | null;
+}
+
+export interface HamlibStatusEvent {
+  isInitialized: boolean;
+  isConnected: boolean;
+  radioId: string | null;
+  errorMessage: string | null;
+}
+
+export const HAMLIB_BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200] as const;
+
 // SmartUnlink types
 export const FLEX_RADIO_MODELS = [
   'FLEX-5100',   // Aurora series
@@ -380,6 +462,12 @@ type EventHandlers = {
   onRadioConnectionStateChanged?: (evt: RadioConnectionStateChangedEvent) => void;
   onRadioStateChanged?: (evt: RadioStateChangedEvent) => void;
   onRadioSlicesUpdated?: (evt: RadioSlicesUpdatedEvent) => void;
+  // Hamlib configuration handlers
+  onHamlibRigList?: (evt: HamlibRigListEvent) => void;
+  onHamlibRigCaps?: (evt: HamlibRigCapsEvent) => void;
+  onHamlibSerialPorts?: (evt: HamlibSerialPortsEvent) => void;
+  onHamlibConfigLoaded?: (evt: HamlibConfigLoadedEvent) => void;
+  onHamlibStatus?: (evt: HamlibStatusEvent) => void;
   // SmartUnlink handlers
   onSmartUnlinkRadioAdded?: (evt: SmartUnlinkRadioAddedEvent) => void;
   onSmartUnlinkRadioUpdated?: (evt: SmartUnlinkRadioUpdatedEvent) => void;
@@ -553,6 +641,27 @@ class SignalRService {
       this.handlers.onRadioSlicesUpdated?.(evt);
     });
 
+    // Hamlib configuration events
+    this.connection.on('OnHamlibRigList', (evt: HamlibRigListEvent) => {
+      this.handlers.onHamlibRigList?.(evt);
+    });
+
+    this.connection.on('OnHamlibRigCaps', (evt: HamlibRigCapsEvent) => {
+      this.handlers.onHamlibRigCaps?.(evt);
+    });
+
+    this.connection.on('OnHamlibSerialPorts', (evt: HamlibSerialPortsEvent) => {
+      this.handlers.onHamlibSerialPorts?.(evt);
+    });
+
+    this.connection.on('OnHamlibConfigLoaded', (evt: HamlibConfigLoadedEvent) => {
+      this.handlers.onHamlibConfigLoaded?.(evt);
+    });
+
+    this.connection.on('OnHamlibStatus', (evt: HamlibStatusEvent) => {
+      this.handlers.onHamlibStatus?.(evt);
+    });
+
     // SmartUnlink events
     this.connection.on('OnSmartUnlinkRadioAdded', (evt: SmartUnlinkRadioAddedEvent) => {
       this.handlers.onSmartUnlinkRadioAdded?.(evt);
@@ -659,13 +768,33 @@ class SignalRService {
     await this.connection?.invoke('RequestRadioStatus');
   }
 
-  // Hamlib (rigctld) methods
-  async connectHamlib(host: string, port: number = 4532, name?: string): Promise<void> {
-    await this.connection?.invoke('ConnectHamlib', host, port, name);
+  // Hamlib configuration methods
+  async getHamlibRigList(): Promise<void> {
+    await this.connection?.invoke('GetHamlibRigList');
   }
 
-  async disconnectHamlib(radioId: string): Promise<void> {
-    await this.connection?.invoke('DisconnectHamlib', radioId);
+  async getHamlibRigCaps(modelId: number): Promise<void> {
+    await this.connection?.invoke('GetHamlibRigCaps', modelId);
+  }
+
+  async getHamlibSerialPorts(): Promise<void> {
+    await this.connection?.invoke('GetHamlibSerialPorts');
+  }
+
+  async getHamlibConfig(): Promise<void> {
+    await this.connection?.invoke('GetHamlibConfig');
+  }
+
+  async getHamlibStatus(): Promise<void> {
+    await this.connection?.invoke('GetHamlibStatus');
+  }
+
+  async connectHamlibRig(config: HamlibRigConfigDto): Promise<void> {
+    await this.connection?.invoke('ConnectHamlibRig', config);
+  }
+
+  async disconnectHamlibRig(): Promise<void> {
+    await this.connection?.invoke('DisconnectHamlibRig');
   }
 
   // TCI direct connection methods

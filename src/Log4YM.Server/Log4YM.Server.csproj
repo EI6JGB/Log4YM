@@ -12,10 +12,16 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
     <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Log4YM.Contracts\Log4YM.Contracts.csproj" />
+  </ItemGroup>
+
+  <!-- Native Hamlib libraries - copy to output preserving directory structure -->
+  <ItemGroup>
+    <Content Include="runtimes\**\native\*" CopyToOutputDirectory="PreserveNewest" Link="runtimes\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

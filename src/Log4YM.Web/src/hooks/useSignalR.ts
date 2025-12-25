@@ -1,6 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { signalRService, type SmartUnlinkRadioDto } from '../api/signalr';
+import { signalRService, type SmartUnlinkRadioDto, type HamlibRigConfigDto } from '../api/signalr';
 import { useAppStore } from '../store/appStore';
 
 export function useSignalR() {
@@ -228,13 +228,65 @@ export function useSignalR() {
     await signalRService.selectRadioInstance(radioId, instance);
   }, []);
 
-  // Hamlib (rigctld) methods
-  const connectHamlib = useCallback(async (host: string, port: number = 4532, name?: string) => {
-    await signalRService.connectHamlib(host, port, name);
+  // Hamlib methods (new native library integration)
+  const getHamlibRigList = useCallback(async () => {
+    await signalRService.getHamlibRigList();
   }, []);
 
-  const disconnectHamlib = useCallback(async (radioId: string) => {
-    await signalRService.disconnectHamlib(radioId);
+  const getHamlibRigCaps = useCallback(async (modelId: number) => {
+    await signalRService.getHamlibRigCaps(modelId);
+  }, []);
+
+  const getHamlibSerialPorts = useCallback(async () => {
+    await signalRService.getHamlibSerialPorts();
+  }, []);
+
+  const getHamlibConfig = useCallback(async () => {
+    await signalRService.getHamlibConfig();
+  }, []);
+
+  const getHamlibStatus = useCallback(async () => {
+    await signalRService.getHamlibStatus();
+  }, []);
+
+  const connectHamlibRig = useCallback(async (config: HamlibRigConfigDto) => {
+    await signalRService.connectHamlibRig(config);
+  }, []);
+
+  const disconnectHamlibRig = useCallback(async () => {
+    await signalRService.disconnectHamlibRig();
+  }, []);
+
+  // Legacy rigctld methods (kept for backwards compatibility)
+  const connectHamlib = useCallback(async (host: string, port: number = 4532, name?: string) => {
+    // Map to new native Hamlib with network connection type
+    const config: HamlibRigConfigDto = {
+      modelId: 2,  // Hamlib NET rigctld protocol
+      modelName: name || 'rigctld',
+      connectionType: 'Network',
+      hostname: host,
+      networkPort: port,
+      baudRate: 9600,
+      dataBits: 8,
+      stopBits: 1,
+      flowControl: 'None',
+      parity: 'None',
+      pttType: 'Rig',
+      getFrequency: true,
+      getMode: true,
+      getVfo: true,
+      getPtt: true,
+      getPower: false,
+      getRit: false,
+      getXit: false,
+      getKeySpeed: false,
+      pollIntervalMs: 250
+    };
+    await signalRService.connectHamlibRig(config);
+  }, []);
+
+  const disconnectHamlib = useCallback(async (_radioId: string) => {
+    await signalRService.disconnectHamlibRig();
   }, []);
 
   // TCI direct connection methods
@@ -279,7 +331,15 @@ export function useSignalR() {
     disconnectRadio,
     selectRadioSlice,
     selectRadioInstance,
-    // Hamlib (rigctld)
+    // Hamlib (new native integration)
+    getHamlibRigList,
+    getHamlibRigCaps,
+    getHamlibSerialPorts,
+    getHamlibConfig,
+    getHamlibStatus,
+    connectHamlibRig,
+    disconnectHamlibRig,
+    // Hamlib (legacy rigctld compatibility)
     connectHamlib,
     disconnectHamlib,
     // TCI direct connection

@@ -423,6 +423,166 @@ public record SelectRadioInstanceCommand(
     int Instance
 );
 
+// ===== Hamlib Configuration Events =====
+
+/// <summary>
+/// Hamlib connection type
+/// </summary>
+public enum HamlibConnectionType
+{
+    Serial,
+    Network
+}
+
+/// <summary>
+/// Hamlib data bits options
+/// </summary>
+public enum HamlibDataBits
+{
+    Five = 5,
+    Six = 6,
+    Seven = 7,
+    Eight = 8
+}
+
+/// <summary>
+/// Hamlib stop bits options
+/// </summary>
+public enum HamlibStopBits
+{
+    One = 1,
+    Two = 2
+}
+
+/// <summary>
+/// Hamlib flow control options
+/// </summary>
+public enum HamlibFlowControl
+{
+    None,
+    Hardware,
+    Software
+}
+
+/// <summary>
+/// Hamlib parity options
+/// </summary>
+public enum HamlibParity
+{
+    None,
+    Even,
+    Odd,
+    Mark,
+    Space
+}
+
+/// <summary>
+/// Hamlib PTT type
+/// </summary>
+public enum HamlibPttType
+{
+    None,
+    Rig,
+    Dtr,
+    Rts
+}
+
+/// <summary>
+/// Information about a Hamlib rig model
+/// </summary>
+public record HamlibRigModelInfo(
+    int ModelId,
+    string Manufacturer,
+    string Model,
+    string Version,
+    string DisplayName
+);
+
+/// <summary>
+/// Hamlib rig capabilities
+/// </summary>
+public record HamlibRigCapabilities(
+    bool CanGetFreq,
+    bool CanGetMode,
+    bool CanGetVfo,
+    bool CanGetPtt,
+    bool CanGetPower,
+    bool CanGetRit,
+    bool CanGetXit,
+    bool CanGetKeySpeed,
+    bool CanSendMorse,
+    int DefaultDataBits,
+    int DefaultStopBits,
+    bool IsNetworkOnly
+);
+
+/// <summary>
+/// Hamlib rig configuration
+/// </summary>
+public record HamlibRigConfigDto(
+    int ModelId,
+    string ModelName,
+    HamlibConnectionType ConnectionType,
+    string? SerialPort,
+    int BaudRate,
+    HamlibDataBits DataBits,
+    HamlibStopBits StopBits,
+    HamlibFlowControl FlowControl,
+    HamlibParity Parity,
+    string? Hostname,
+    int NetworkPort,
+    HamlibPttType PttType,
+    string? PttPort,
+    bool GetFrequency,
+    bool GetMode,
+    bool GetVfo,
+    bool GetPtt,
+    bool GetPower,
+    bool GetRit,
+    bool GetXit,
+    bool GetKeySpeed,
+    int PollIntervalMs
+);
+
+/// <summary>
+/// Hamlib rig list response
+/// </summary>
+public record HamlibRigListEvent(
+    List<HamlibRigModelInfo> Rigs
+);
+
+/// <summary>
+/// Hamlib rig capabilities response
+/// </summary>
+public record HamlibRigCapsEvent(
+    int ModelId,
+    HamlibRigCapabilities Capabilities
+);
+
+/// <summary>
+/// Available serial ports
+/// </summary>
+public record HamlibSerialPortsEvent(
+    List<string> Ports
+);
+
+/// <summary>
+/// Hamlib configuration loaded
+/// </summary>
+public record HamlibConfigLoadedEvent(
+    HamlibRigConfigDto? Config
+);
+
+/// <summary>
+/// Hamlib library initialization status
+/// </summary>
+public record HamlibStatusEvent(
+    bool IsInitialized,
+    bool IsConnected,
+    string? RadioId,
+    string? ErrorMessage
+);
+
 // ===== SmartUnlink Events =====
 
 /// <summary>
