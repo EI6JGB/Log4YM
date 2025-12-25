@@ -1,12 +1,14 @@
 import { useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { signalRService, type SmartUnlinkRadioDto, type HamlibRigConfigDto } from '../api/signalr';
-import { useAppStore } from '../store/appStore';
+import { signalRService, type SmartUnlinkRadioDto, type HamlibRigConfigDto, type SignalRConnectionState } from '../api/signalr';
+import { useAppStore, type ConnectionState } from '../store/appStore';
+import { useSettingsStore } from '../store/settingsStore';
 
 export function useSignalR() {
   const queryClient = useQueryClient();
   const {
     setConnected,
+    setConnectionState,
     setFocusedCallsign,
     setFocusedCallsignInfo,
     setLookingUpCallsign,
@@ -30,8 +32,57 @@ export function useSignalR() {
   } = useAppStore();
 
   useEffect(() => {
+    // Set up connection state callback - maps SignalR state to app state
+    signalRService.setConnectionStateCallback((state: SignalRConnectionState, attempt: number) => {
+      setConnectionState(state as ConnectionState, attempt);
+
+      // When disconnected, mark settings as not loaded to prevent saving stale data
+      if (state === 'disconnected') {
+        useSettingsStore.getState().setNotLoaded();
+      }
+    });
+
+    // Set up callback to fully rehydrate when connected (or reconnected)
+    // This callback is responsible for loading ALL data and then setting state to 'connected'
+    signalRService.setOnConnectedCallback(async () => {
+      console.log('Connection established, rehydrating application state...');
+      try {
+        // 1. Reload settings from MongoDB
+        console.log('Reloading settings from database...');
+        await useSettingsStore.getState().loadSettings();
+
+        // 2. Request all device statuses via SignalR
+        console.log('Requesting device statuses...');
+        await Promise.all([
+          signalRService.requestAntennaGeniusStatus(),
+          signalRService.requestPgxlStatus(),
+          signalRService.requestRadioStatus(),
+          signalRService.requestSmartUnlinkStatus(),
+          signalRService.requestRotatorStatus(),
+        ]);
+
+        // 3. Invalidate and refetch React Query caches
+        console.log('Invalidating query caches...');
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['qsos'] }),
+          queryClient.invalidateQueries({ queryKey: ['spots'] }),
+          queryClient.invalidateQueries({ queryKey: ['statistics'] }),
+        ]);
+
+        console.log('Rehydration complete');
+        // 4. Now we can set state to fully connected
+        setConnectionState('connected', 0);
+      } catch (err) {
+        console.error('Error during rehydration:', err);
+        // Still set connected even if some things failed - user can manually refresh
+        setConnectionState('connected', 0);
+      }
+    });
+
     const connect = async () => {
       try {
+        setConnectionState('connecting', 0);
+
         signalRService.setHandlers({
           onCallsignFocused: (evt) => {
             setFocusedCallsign(evt.callsign);
@@ -144,23 +195,15 @@ export function useSignalR() {
         });
 
         await signalRService.connect();
-
-        // Only request statuses if actually connected
-        if (signalRService.isConnected) {
-          // Request current device statuses after connection
-          await signalRService.requestAntennaGeniusStatus();
-          await signalRService.requestPgxlStatus();
-          await signalRService.requestRadioStatus();
-          await signalRService.requestSmartUnlinkStatus();
-          await signalRService.requestRotatorStatus();
-          setConnected(true);
-        }
+        // Device statuses are requested via the onConnectedCallback
+        // Connection state is managed by the SignalR service callback
       } catch (error) {
         // Only log if it's not an abort error (which happens during HMR)
         if (!(error instanceof Error && error.name === 'AbortError')) {
           console.error('Failed to connect to SignalR:', error);
         }
-        setConnected(false);
+        // Connection state is managed by the SignalR service callback
+        // It will automatically try to reconnect
       }
     };
 
@@ -168,9 +211,9 @@ export function useSignalR() {
 
     return () => {
       signalRService.disconnect();
-      setConnected(false);
+      setConnectionState('disconnected', 0);
     };
-  }, [queryClient, setConnected, setFocusedCallsign, setFocusedCallsignInfo, setLookingUpCallsign, setRotatorPosition, setRigStatus, setAntennaGeniusStatus, updateAntennaGeniusPort, removeAntennaGeniusDevice, setPgxlStatus, removePgxlDevice, addDiscoveredRadio, removeDiscoveredRadio, setRadioConnectionState, setRadioState, setRadioSlices, addSmartUnlinkRadio, updateSmartUnlinkRadio, removeSmartUnlinkRadio, setSmartUnlinkRadios, setQrzSyncProgress]);
+  }, [queryClient, setConnected, setConnectionState, setFocusedCallsign, setFocusedCallsignInfo, setLookingUpCallsign, setRotatorPosition, setRigStatus, setAntennaGeniusStatus, updateAntennaGeniusPort, removeAntennaGeniusDevice, setPgxlStatus, removePgxlDevice, addDiscoveredRadio, removeDiscoveredRadio, setRadioConnectionState, setRadioState, setRadioSlices, addSmartUnlinkRadio, updateSmartUnlinkRadio, removeSmartUnlinkRadio, setSmartUnlinkRadios, setQrzSyncProgress]);
 
   const focusCallsign = useCallback(async (callsign: string, source: string) => {
     setFocusedCallsign(callsign);
@@ -315,8 +358,14 @@ export function useSignalR() {
     await signalRService.setSmartUnlinkRadioEnabled(id, enabled);
   }, []);
 
+  // Manual reconnect function
+  const reconnect = useCallback(async () => {
+    await signalRService.reconnect();
+  }, []);
+
   return {
     isConnected: signalRService.isConnected,
+    reconnect,
     focusCallsign,
     selectSpot,
     commandRotator,

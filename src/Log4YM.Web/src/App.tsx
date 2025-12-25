@@ -4,6 +4,7 @@ import { X, Radio, Book, Zap, LayoutGrid, Antenna, Plus, Map, Compass, Gauge, Us
 import { Header } from './components/Header';
 import { StatusBar } from './components/StatusBar';
 import { SettingsPanel } from './components/SettingsPanel';
+import { ConnectionOverlay } from './components/ConnectionOverlay';
 import { useSignalR } from './hooks/useSignalR';
 import { LogEntryPlugin, LogHistoryPlugin, ClusterPlugin, MapPlugin, RotatorPlugin, GlobePlugin, AntennaGeniusPlugin, PgxlPlugin, SmartUnlinkPlugin, RadioPlugin, QrzProfilePlugin } from './plugins';
 import { Globe as Globe3D } from 'lucide-react';
@@ -282,6 +283,9 @@ export function App() {
 
       {/* Settings Panel (Modal) */}
       <SettingsPanel />
+
+      {/* Connection Overlay - blocks UI when disconnected */}
+      <ConnectionOverlay />
     </div>
   );
 }

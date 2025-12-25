@@ -439,6 +439,11 @@ export interface QrzSyncProgressEvent {
   message: string | null;
 }
 
+// Connection state for tracking
+export type SignalRConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'rehydrating';
+
+type ConnectionStateCallback = (state: SignalRConnectionState, attempt: number) => void;
+
 type EventHandlers = {
   onCallsignFocused?: (evt: CallsignFocusedEvent) => void;
   onCallsignLookedUp?: (evt: CallsignLookedUpEvent) => void;
@@ -480,16 +485,52 @@ type EventHandlers = {
 class SignalRService {
   private connection: signalR.HubConnection | null = null;
   private handlers: EventHandlers = {};
-  private maxReconnectAttempts = 10;
   private connectPromise: Promise<void> | null = null;
   private disconnectPending = false;
+  private connectionStateCallback: ConnectionStateCallback | null = null;
+  private onConnectedCallback: (() => Promise<void>) | null = null;
+  private reconnectAttempt = 0;
+  private isManualDisconnect = false;
+  private reconnectTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  // Set callback for connection state changes
+  setConnectionStateCallback(callback: ConnectionStateCallback): void {
+    this.connectionStateCallback = callback;
+  }
+
+  // Set callback to run when connection is established (initial or reconnect)
+  setOnConnectedCallback(callback: () => Promise<void>): void {
+    this.onConnectedCallback = callback;
+  }
+
+  private notifyStateChange(state: SignalRConnectionState, attempt = 0): void {
+    this.connectionStateCallback?.(state, attempt);
+  }
+
+  private async notifyConnected(): Promise<void> {
+    if (this.onConnectedCallback) {
+      try {
+        await this.onConnectedCallback();
+      } catch (err) {
+        console.error('Error in onConnected callback:', err);
+      }
+    }
+  }
 
   async connect(): Promise<void> {
     // Cancel any pending disconnect (handles React StrictMode double-render)
     this.disconnectPending = false;
+    this.isManualDisconnect = false;
+
+    // Clear any pending reconnect timeout
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
 
     // If already connected, return immediately
     if (this.connection?.state === signalR.HubConnectionState.Connected) {
+      this.notifyStateChange('connected', 0);
       return;
     }
 
@@ -497,6 +538,10 @@ class SignalRService {
     if (this.connectPromise) {
       return this.connectPromise;
     }
+
+    // Notify connecting state
+    const isReconnect = this.reconnectAttempt > 0;
+    this.notifyStateChange(isReconnect ? 'reconnecting' : 'connecting', this.reconnectAttempt);
 
     // If there's an existing connection in a bad state, clean it up
     if (this.connection &&
@@ -516,10 +561,15 @@ class SignalRService {
         .withUrl('/hubs/log')
         .withAutomaticReconnect({
           nextRetryDelayInMilliseconds: (retryContext) => {
-            if (retryContext.previousRetryCount >= this.maxReconnectAttempts) {
+            // Built-in reconnect: try up to 5 times with exponential backoff
+            // After that, we fall back to our own unlimited reconnection loop
+            if (retryContext.previousRetryCount >= 5) {
               return null;
             }
-            return Math.min(1000 * Math.pow(2, retryContext.previousRetryCount), 30000);
+            const delay = Math.min(1000 * Math.pow(2, retryContext.previousRetryCount), 30000);
+            this.reconnectAttempt = retryContext.previousRetryCount + 1;
+            this.notifyStateChange('reconnecting', this.reconnectAttempt);
+            return delay;
           }
         })
         .configureLogging(signalR.LogLevel.Warning) // Reduce log noise
@@ -529,22 +579,39 @@ class SignalRService {
 
       this.connection.onreconnecting(() => {
         console.log('SignalR reconnecting...');
+        this.notifyStateChange('reconnecting', this.reconnectAttempt);
       });
 
-      this.connection.onreconnected(() => {
-        console.log('SignalR reconnected');
+      this.connection.onreconnected(async () => {
+        console.log('SignalR reconnected, starting rehydration...');
+        this.reconnectAttempt = 0;
+        // Go to rehydrating state - callback will set to connected when done
+        this.notifyStateChange('rehydrating', 0);
+        // Rehydrate all data - callback is responsible for setting 'connected' when done
+        await this.notifyConnected();
       });
 
-      this.connection.onclose(() => {
-        console.log('SignalR connection closed');
+      this.connection.onclose((error) => {
+        console.log('SignalR connection closed', error ? `Error: ${error.message}` : '');
         this.connectPromise = null;
+
+        // If this wasn't a manual disconnect, start our own reconnection loop
+        if (!this.isManualDisconnect && !this.disconnectPending) {
+          this.notifyStateChange('disconnected', this.reconnectAttempt);
+          this.scheduleReconnect();
+        }
       });
     }
 
     // Store the connection promise so concurrent calls can wait on it
     this.connectPromise = this.connection.start()
-      .then(() => {
-        console.log('SignalR connected');
+      .then(async () => {
+        console.log('SignalR connected, starting rehydration...');
+        this.reconnectAttempt = 0;
+        // Go to rehydrating state - callback will set to connected when done
+        this.notifyStateChange('rehydrating', 0);
+        // Rehydrate all data - callback is responsible for setting 'connected' when done
+        await this.notifyConnected();
       })
       .catch((err) => {
         // Only log non-abort errors (aborts happen during HMR/StrictMode)
@@ -552,10 +619,55 @@ class SignalRService {
           console.error('SignalR connection error:', err);
         }
         this.connectPromise = null;
+
+        // Schedule reconnection on failure (unless manually disconnecting)
+        if (!this.isManualDisconnect && !this.disconnectPending) {
+          this.notifyStateChange('disconnected', this.reconnectAttempt);
+          this.scheduleReconnect();
+        }
+
         throw err;
       });
 
     return this.connectPromise;
+  }
+
+  private scheduleReconnect(): void {
+    // Don't schedule if manually disconnected or already scheduling
+    if (this.isManualDisconnect || this.disconnectPending || this.reconnectTimeoutId) {
+      return;
+    }
+
+    this.reconnectAttempt++;
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempt - 1), 30000);
+
+    console.log(`SignalR scheduling reconnect attempt ${this.reconnectAttempt} in ${delay}ms`);
+    this.notifyStateChange('reconnecting', this.reconnectAttempt);
+
+    this.reconnectTimeoutId = setTimeout(async () => {
+      this.reconnectTimeoutId = null;
+
+      if (this.isManualDisconnect || this.disconnectPending) {
+        return;
+      }
+
+      try {
+        // Clean up the old connection before reconnecting
+        if (this.connection) {
+          try {
+            await this.connection.stop();
+          } catch {
+            // Ignore
+          }
+          this.connection = null;
+        }
+
+        await this.connect();
+      } catch {
+        // connect() will schedule another reconnect on failure
+      }
+    }, delay);
   }
 
   private setupEventHandlers(): void {
@@ -839,17 +951,26 @@ class SignalRService {
   async disconnect(): Promise<void> {
     // Set pending flag - if connect() is called before timeout, it will cancel
     this.disconnectPending = true;
+    this.isManualDisconnect = true;
+
+    // Clear any pending reconnect timeout
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
 
     // Small delay to allow React StrictMode's immediate re-mount
     await new Promise(resolve => setTimeout(resolve, 100));
 
     // If connect() was called during the delay, don't disconnect
     if (!this.disconnectPending) {
+      this.isManualDisconnect = false;
       return;
     }
 
     this.disconnectPending = false;
     this.connectPromise = null;
+    this.reconnectAttempt = 0;
 
     if (this.connection) {
       try {
@@ -859,6 +980,34 @@ class SignalRService {
       }
       this.connection = null;
     }
+
+    this.notifyStateChange('disconnected', 0);
+  }
+
+  // Manual reconnect - reset attempt counter and try immediately
+  async reconnect(): Promise<void> {
+    this.isManualDisconnect = false;
+    this.reconnectAttempt = 0;
+
+    // Clear any pending reconnect timeout
+    if (this.reconnectTimeoutId) {
+      clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
+
+    // Clean up existing connection
+    if (this.connection) {
+      try {
+        await this.connection.stop();
+      } catch {
+        // Ignore
+      }
+      this.connection = null;
+    }
+    this.connectPromise = null;
+
+    // Start fresh connection
+    await this.connect();
   }
 }
 
