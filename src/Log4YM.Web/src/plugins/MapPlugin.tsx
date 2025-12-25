@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { Map as MapIcon, MapPin, Target, Maximize2, ZoomIn, ZoomOut, Layers } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Circle, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import { useAppStore } from '../store/appStore';
 import { useSettingsStore } from '../store/settingsStore';
@@ -144,62 +144,6 @@ function getDestinationPoint(lat: number, lon: number, azimuth: number, distance
   return [lat2Rad * toDeg, ((lon2Rad * toDeg + 540) % 360) - 180];
 }
 
-// Map controls component
-function MapControls({ currentLayer, onLayerChange }: {
-  currentLayer: TileLayerKey;
-  onLayerChange: (layer: TileLayerKey) => void;
-}) {
-  const map = useMap();
-  const [showLayerPicker, setShowLayerPicker] = useState(false);
-
-  return (
-    <div className="leaflet-top leaflet-right" style={{ zIndex: 1000 }}>
-      <div className="flex flex-col gap-1 m-2">
-        <button
-          onClick={() => map.zoomIn()}
-          className="glass-button p-2"
-          title="Zoom In"
-        >
-          <ZoomIn className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => map.zoomOut()}
-          className="glass-button p-2"
-          title="Zoom Out"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </button>
-        <div className="relative">
-          <button
-            onClick={() => setShowLayerPicker(!showLayerPicker)}
-            className="glass-button p-2"
-            title="Map Layers"
-          >
-            <Layers className="w-4 h-4" />
-          </button>
-          {showLayerPicker && (
-            <div className="absolute right-full mr-2 top-0 glass-panel p-2 min-w-[120px]">
-              {Object.entries(TILE_LAYERS).map(([key, layer]) => (
-                <button
-                  key={key}
-                  onClick={() => {
-                    onLayerChange(key as TileLayerKey);
-                    setShowLayerPicker(false);
-                  }}
-                  className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-dark-600 ${
-                    currentLayer === key ? 'text-accent-primary' : 'text-gray-300'
-                  }`}
-                >
-                  {layer.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function MapPlugin() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -210,6 +154,7 @@ export function MapPlugin() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [tileLayer, setTileLayer] = useState<TileLayerKey>('dark');
   const [currentAzimuth, setCurrentAzimuth] = useState(0);
+  const [showLayerPicker, setShowLayerPicker] = useState(false);
 
   // Rotator is enabled in settings
   const rotatorEnabled = settings.rotator.enabled;
@@ -299,9 +244,6 @@ export function MapPlugin() {
             attribution={TILE_LAYERS[tileLayer].attribution}
           />
 
-          {/* Map controls */}
-          <MapControls currentLayer={tileLayer} onLayerChange={setTileLayer} />
-
           {/* Click handler */}
           <MapClickHandler
             stationLat={stationLat}
@@ -382,6 +324,61 @@ export function MapPlugin() {
             </Marker>
           )}
         </MapContainer>
+
+        {/* Map controls overlay - positioned outside MapContainer to avoid event conflicts */}
+        <div className="absolute top-2 right-2 z-[1000] flex flex-col gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              mapRef.current?.zoomIn();
+            }}
+            className="glass-button p-2"
+            title="Zoom In"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              mapRef.current?.zoomOut();
+            }}
+            className="glass-button p-2"
+            title="Zoom Out"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowLayerPicker(!showLayerPicker);
+              }}
+              className="glass-button p-2"
+              title="Map Layers"
+            >
+              <Layers className="w-4 h-4" />
+            </button>
+            {showLayerPicker && (
+              <div className="absolute right-full mr-2 top-0 glass-panel p-2 min-w-[120px]">
+                {Object.entries(TILE_LAYERS).map(([key, layer]) => (
+                  <button
+                    key={key}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTileLayer(key as TileLayerKey);
+                      setShowLayerPicker(false);
+                    }}
+                    className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-dark-600 ${
+                      tileLayer === key ? 'text-accent-primary' : 'text-gray-300'
+                    }`}
+                  >
+                    {layer.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Station info overlay */}
         {stationGrid && (
