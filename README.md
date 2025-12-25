@@ -1,113 +1,165 @@
 # Log4YM
 
-**Log for Young Men** - A modern, web-based amateur radio logging application built for the next generation of HAM operators.
+**Log for Young Men** - A modern, web-based amateur radio logging application.
 
-*Why "Young Men"? It's a playful nod to Log4OM (Log for Old Men) - we're bringing amateur radio logging into the modern web era.*
+> **Alpha Software** - Log4YM is under active development. Features may change and bugs are expected. Use at your own risk and always keep backups of your log data.
 
 ![Log4YM 3D Globe](docs/images/log4ym-globe2.png)
 
 ## What is Log4YM?
 
-Log4YM is a fully web-based amateur radio logging platform designed to run on any device with a browser - your shack PC, laptop, tablet, or phone. The server handles all the heavy lifting: connecting to your rig via CAT control, receiving DX cluster spots over UDP, and managing your logbook. You just open a browser and operate.
+Log4YM is a web-based amateur radio logger that runs on a server in your shack and can be accessed from any browser - PC, tablet, or phone. Your logs and settings sync automatically across all your devices via MongoDB.
 
-### Key Concepts
+### Key Features
 
-- **Web-First Design**: No desktop app to install. The server runs in your shack (or on a Raspberry Pi) and you connect from any browser, anywhere.
+- **3D Globe & 2D Map** - Visualize contacts and control your rotator with a click
+- **Real-Time DX Cluster** - Live spots with band/mode filtering
+- **CAT Control** - FlexRadio SmartSDR and TCI radio integration
+- **Rotator Control** - Hamlib rotctld support with presets
+- **Hardware Integration** - 4O3A Antenna Genius, Elecraft PGXL amplifier
+- **Cloud Sync** - All settings, layouts, and logs sync across machines via MongoDB Atlas
 
-- **Plugin Architecture**: The UI is built from dockable, drag-and-drop panels. Arrange your workspace however you like - log entry, cluster spots, 3D globe, QSO history - all where you want them.
+---
 
-- **Real-Time Everything**: SignalR WebSocket connections mean when a spot comes in, your globe rotates. When you tune your rig, the UI updates. Everything stays in sync.
+## Quick Start
 
-- **3D Globe Visualization**: Interactive Earth view showing your antenna beam path. Click anywhere on the globe to set your rotator bearing. Watch your coverage pattern in real-time.
-
-## Core Features
-
-| Feature | Description |
-|---------|-------------|
-| **Log Entry** | Quick QSO logging with automatic callsign lookup (QRZ, HamQTH) |
-| **DX Cluster** | Real-time spots via UDP multicast with band/mode filtering |
-| **3D Globe** | Interactive globe.gl Earth with beam visualization and click-to-rotate |
-| **2D Map** | Leaflet-based map with beam path overlay |
-| **Log History** | Searchable QSO database with ADIF import/export |
-| **CAT Control** | FlexRadio and TCI rig frequency/mode sync |
-| **Rotator Control** | Hamlib rotctld integration with real-time azimuth display |
-| **Antenna Genius** | 4O3A Antenna Genius switch control and status |
-| **PGXL Amplifier** | Elecraft PGXL amplifier monitoring and control |
-| **SmartUnlink** | FlexRadio VPN discovery broadcast for remote operation |
-
-## Architecture Overview
-
-```mermaid
-flowchart TB
-    subgraph Browser["🌐 Browser (Any Device)"]
-        direction LR
-        LogEntry["📝 Log Entry"]
-        Cluster["⚡ Cluster"]
-        Globe["🌍 3D Globe"]
-        History["📖 History"]
-        More["...more"]
-    end
-
-    Browser <-->|"SignalR WebSocket"| Server
-
-    subgraph Server["🖥️ Log4YM Server (.NET 8)"]
-        direction TB
-        QRZ["QRZ/HamQTH\nLookup"]
-        CAT["FlexRadio/TCI\nCAT Control"]
-        Rotator["Hamlib\nrotctld"]
-        ClusterUDP["Cluster\nUDP Spots"]
-        AG["Antenna Genius\n4O3A"]
-        PGXL["PGXL\nAmplifier"]
-    end
-
-    Server <--> DB[(MongoDB)]
-    Rotator <-->|"TCP 4533"| RotatorHW["🎯 Rotator"]
-    AG <-->|"TCP"| AGHW["📡 Antenna Switch"]
-    PGXL <-->|"TCP"| PGXLHW["⚡ Amplifier"]
-    CAT <-->|"TCP/API"| Radio["📻 Radio"]
-```
-
-## Getting Started
+### Option 1: Docker (Recommended)
 
 ```bash
-# Clone and run with Docker
 git clone https://github.com/brianbruff/Log4YM.git
 cd Log4YM
 docker-compose up -d
-
-# Open http://localhost:5000 in your browser
 ```
 
-For development:
+Open http://localhost:5000 in your browser.
+
+### Option 2: Run from Source
+
 ```bash
-cd src/Log4YM.Web && npm install && npm run dev
-cd src/Log4YM.Server && dotnet run
+# Terminal 1 - Start the server
+cd src/Log4YM.Server
+dotnet run
+
+# Terminal 2 - Start the web UI (for development)
+cd src/Log4YM.Web
+npm install
+npm run dev
 ```
 
-## Roadmap
+---
 
-- [x] Hamlib rotctld integration
-- [x] 4O3A Antenna Genius support
-- [x] Elecraft PGXL amplifier support
-- [x] FlexRadio SmartUnlink VPN discovery
-- [ ] QRZ/HamQTH callsign lookup integration
-- [ ] ADIF import/export
-- [ ] Contest mode with serial number exchange
-- [ ] Cloudlog sync
-- [ ] WSJT-X/JTDX integration
-- [ ] Award tracking (DXCC, WAS, IOTA)
-- [ ] Mobile-optimized compact view
+## Setting Up MongoDB Atlas (Cloud Sync)
 
-## Tech Stack
+MongoDB Atlas is a free cloud database that lets you sync your logs and settings across all your machines. When you log a QSO on your shack PC, it instantly appears on your laptop or phone.
 
-- **Frontend**: React 18, Vite, Tailwind CSS, FlexLayout, globe.gl, Leaflet, Zustand
-- **Backend**: ASP.NET Core 8, SignalR, MongoDB
-- **Hardware**: Hamlib rotctld, 4O3A Antenna Genius, Elecraft PGXL, FlexRadio SmartSDR
-- **Deployment**: Docker, docker-compose
+### Step 1: Create a MongoDB Atlas Account
 
-## Contributing
+1. Go to [mongodb.com/cloud/atlas](https://www.mongodb.com/cloud/atlas)
+2. Click **Try Free** and create an account
+3. Choose the **FREE M0 Sandbox** tier (no credit card required)
 
-Pull requests welcome! Check out the [docs/prds](docs/prds/) folder for architecture details and planned features.
+### Step 2: Create a Cluster
+
+1. Click **Build a Database**
+2. Select **M0 FREE** tier
+3. Choose a cloud provider and region close to you
+4. Click **Create Deployment**
+
+### Step 3: Set Up Database Access
+
+1. Create a database user:
+   - Username: `log4ym` (or your choice)
+   - Password: Generate a secure password and **save it**
+   - Click **Create User**
+
+2. Add your IP address:
+   - Click **Add My Current IP Address** or
+   - Enter `0.0.0.0/0` to allow access from anywhere (less secure but convenient for remote operation)
+   - Click **Add Entry**
+
+### Step 4: Get Your Connection String
+
+1. Click **Connect** on your cluster
+2. Select **Drivers**
+3. Copy the connection string, it looks like:
+   ```
+   mongodb+srv://log4ym:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+   ```
+4. Replace `<password>` with your actual password
+
+### Step 5: Configure Log4YM
+
+**For Docker:** Edit `docker-compose.yml`:
+
+```yaml
+environment:
+  - MongoDB__ConnectionString=mongodb+srv://log4ym:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+  - MongoDB__DatabaseName=Log4YM
+```
+
+**For running from source:** Edit `src/Log4YM.Server/appsettings.json`:
+
+```json
+{
+  "MongoDB": {
+    "ConnectionString": "mongodb+srv://log4ym:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority",
+    "DatabaseName": "Log4YM"
+  }
+}
+```
+
+Restart Log4YM and your data will now sync to the cloud.
+
+### What Syncs Across Machines?
+
+| Data | Description |
+|------|-------------|
+| **QSO Logs** | All your contacts |
+| **Settings** | Station info, callsign, grid square, QRZ credentials |
+| **Layouts** | Your custom panel arrangements |
+| **Rotator Presets** | Saved beam headings |
+
+---
+
+## Configuration
+
+### Station Settings
+
+Open the Settings panel in Log4YM to configure:
+
+- **Callsign** - Your amateur radio callsign
+- **Grid Square** - Your Maidenhead locator (e.g., IO52RN)
+- **QRZ Login** - For callsign lookups (requires QRZ XML subscription)
+
+### Hardware Connections
+
+| Device | Default Port | Configuration |
+|--------|--------------|---------------|
+| Hamlib rotctld | TCP 4533 | Settings > Rotator |
+| FlexRadio | SmartSDR API | Auto-discovered |
+| TCI Radio | TCP 40001 | Settings > Radio |
+| Antenna Genius | TCP 6800 | Plugin settings |
+| PGXL Amplifier | TCP 50000 | Plugin settings |
+
+---
+
+## Troubleshooting
+
+**Can't connect to MongoDB Atlas?**
+- Check your IP is whitelisted in Atlas Network Access
+- Verify the connection string password is correct
+- Ensure your firewall allows outbound connections on port 27017
+
+**Rotator not responding?**
+- Verify rotctld is running: `rotctld -m 202 -r /dev/ttyUSB0`
+- Check the IP and port in Settings > Rotator
+- Test with: `echo "p" | nc localhost 4533`
+
+**No DX Cluster spots?**
+- The server connects to a cluster automatically
+- Check your network allows outbound TCP connections
+
+---
 
 ## License
 
