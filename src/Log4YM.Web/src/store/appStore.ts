@@ -78,6 +78,11 @@ interface AppState {
   // QRZ Sync
   qrzSyncProgress: QrzSyncProgress | null;
   setQrzSyncProgress: (progress: QrzSyncProgress | null) => void;
+
+  // Log History Callsign Filter (shared between LogEntry and LogHistory)
+  logHistoryCallsignFilter: string | null;
+  setLogHistoryCallsignFilter: (callsign: string | null) => void;
+  clearCallsignFromAllControls: () => void;
 }
 
 export interface QrzSyncProgress {
@@ -252,4 +257,14 @@ export const useAppStore = create<AppState>((set) => ({
   // QRZ Sync
   qrzSyncProgress: null,
   setQrzSyncProgress: (progress) => set({ qrzSyncProgress: progress }),
+
+  // Log History Callsign Filter
+  logHistoryCallsignFilter: null,
+  setLogHistoryCallsignFilter: (callsign) => set({ logHistoryCallsignFilter: callsign }),
+  clearCallsignFromAllControls: () => set({
+    focusedCallsign: null,
+    focusedCallsignInfo: null,
+    logHistoryCallsignFilter: null,
+    isLookingUpCallsign: false,
+  }),
 }));

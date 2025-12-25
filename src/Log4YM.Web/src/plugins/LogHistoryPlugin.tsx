@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Book, Search, Calendar, Radio, Filter, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronUp, ChevronDown, X, CloudUpload, Loader2, Pencil, Trash2, Upload, Download, FileText, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
 import { AgGridReact } from 'ag-grid-react';
@@ -108,7 +108,7 @@ export function LogHistoryPlugin() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const queryClient = useQueryClient();
-  const { qrzSyncProgress, setQrzSyncProgress } = useAppStore();
+  const { qrzSyncProgress, setQrzSyncProgress, logHistoryCallsignFilter } = useAppStore();
 
   const handleSyncToQrz = useCallback(async () => {
     if (isSyncing) return;
@@ -130,6 +130,12 @@ export function LogHistoryPlugin() {
       console.error('Failed to cancel sync:', error);
     }
   }, []);
+
+  // Sync callsign filter from LogEntryPlugin
+  useEffect(() => {
+    setCallsignSearch(logHistoryCallsignFilter || '');
+    setCurrentPage(1);
+  }, [logHistoryCallsignFilter]);
 
   // ADIF Import mutation
   const importMutation = useMutation({
@@ -336,7 +342,13 @@ export function LogHistoryPlugin() {
       icon={<Book className="w-5 h-5" />}
       actions={
         <div className="flex items-center gap-3 text-sm text-gray-400">
-          <span>{totalCount.toLocaleString()} QSOs</span>
+          <span>
+            {stats?.totalQsos.toLocaleString() || 0}
+            {hasActiveFilters && totalCount !== stats?.totalQsos && (
+              <span className="text-accent-primary ml-1">({totalCount.toLocaleString()})</span>
+            )}
+            {' '}QSOs
+          </span>
           <span className="text-glass-100">|</span>
           <span>{stats?.uniqueCountries || 0} DXCC</span>
           <div className="flex items-center gap-1">
@@ -475,6 +487,9 @@ export function LogHistoryPlugin() {
                 <span className="font-medium">Summary</span>
                 <span className="text-gray-500">|</span>
                 <span className="text-accent-primary font-bold">{stats.totalQsos.toLocaleString()}</span>
+                {hasActiveFilters && totalCount !== stats.totalQsos && (
+                  <span className="text-accent-info font-bold">({totalCount.toLocaleString()})</span>
+                )}
                 <span className="text-gray-500">QSOs</span>
               </div>
               {showSummary ? (

@@ -24,7 +24,7 @@ const MODES = ['SSB', 'CW', 'FT8', 'FT4', 'RTTY', 'PSK31', 'AM', 'FM'];
 export function LogEntryPlugin() {
   const queryClient = useQueryClient();
   const { focusCallsign } = useSignalR();
-  const { focusedCallsignInfo, radioStates, selectedRadioId, isLookingUpCallsign, setFocusedCallsign, setFocusedCallsignInfo } = useAppStore();
+  const { focusedCallsignInfo, radioStates, selectedRadioId, isLookingUpCallsign, setFocusedCallsign, setFocusedCallsignInfo, setLogHistoryCallsignFilter, clearCallsignFromAllControls } = useAppStore();
   const { settings, updateRadioSettings } = useSettingsStore();
   const followRadio = settings.radio.followRadio;
 
@@ -121,6 +121,8 @@ export function LogEntryPlugin() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['qsos'] });
       queryClient.invalidateQueries({ queryKey: ['statistics'] });
+      // Clear callsign from all controls (QRZ profile, rotator, log history filter, etc.)
+      clearCallsignFromAllControls();
       // Clear form
       setFormData({
         ...formData,
@@ -140,6 +142,9 @@ export function LogEntryPlugin() {
     const callsign = value.toUpperCase();
     setFormData(prev => ({ ...prev, callsign }));
 
+    // Update log history filter to show matching entries
+    setLogHistoryCallsignFilter(callsign.length > 0 ? callsign : null);
+
     if (callsign.length >= 3) {
       await focusCallsign(callsign, 'log-entry');
     } else {
@@ -147,7 +152,7 @@ export function LogEntryPlugin() {
       setFocusedCallsign(null);
       setFocusedCallsignInfo(null);
     }
-  }, [focusCallsign, setFocusedCallsign, setFocusedCallsignInfo]);
+  }, [focusCallsign, setFocusedCallsign, setFocusedCallsignInfo, setLogHistoryCallsignFilter]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
