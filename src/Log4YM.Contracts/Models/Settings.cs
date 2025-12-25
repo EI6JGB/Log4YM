@@ -23,6 +23,9 @@ public class UserSettings
     [BsonElement("radio")]
     public RadioSettings Radio { get; set; } = new();
 
+    [BsonElement("map")]
+    public MapSettings Map { get; set; } = new();
+
     [BsonElement("layoutJson")]
     public string? LayoutJson { get; set; }
 
@@ -124,6 +127,12 @@ public class RadioSettings
 {
     [BsonElement("followRadio")]
     public bool FollowRadio { get; set; } = true;
+}
+
+public class MapSettings
+{
+    [BsonElement("tileLayer")]
+    public string TileLayer { get; set; } = "dark";
 }
 
 public class PluginSettings

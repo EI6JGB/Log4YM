@@ -85,4 +85,17 @@ public class SettingsController : ControllerBase
         var saved = await _settingsService.SaveSettingsAsync(settings);
         return Ok(saved);
     }
+
+    /// <summary>
+    /// Update map settings only
+    /// </summary>
+    [HttpPut("map")]
+    [ProducesResponseType(typeof(UserSettings), StatusCodes.Status200OK)]
+    public async Task<ActionResult<UserSettings>> UpdateMapSettings([FromBody] MapSettings mapSettings)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        settings.Map = mapSettings;
+        var saved = await _settingsService.SaveSettingsAsync(settings);
+        return Ok(saved);
+    }
 }

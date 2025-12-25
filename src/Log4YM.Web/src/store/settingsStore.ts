@@ -41,12 +41,17 @@ export interface RadioSettings {
   followRadio: boolean;
 }
 
+export interface MapSettings {
+  tileLayer: 'osm' | 'dark' | 'satellite' | 'terrain';
+}
+
 export interface Settings {
   station: StationSettings;
   qrz: QrzSettings;
   appearance: AppearanceSettings;
   rotator: RotatorSettings;
   radio: RadioSettings;
+  map: MapSettings;
 }
 
 export type SettingsSection = 'station' | 'qrz' | 'rotator' | 'logbook' | 'appearance' | 'about';
@@ -73,6 +78,7 @@ interface SettingsState {
   updateAppearanceSettings: (appearance: Partial<AppearanceSettings>) => void;
   updateRotatorSettings: (rotator: Partial<RotatorSettings>) => void;
   updateRadioSettings: (radio: Partial<RadioSettings>) => void;
+  updateMapSettings: (map: Partial<MapSettings>) => void;
 
   // Persistence (MongoDB only - no localStorage)
   saveSettings: () => Promise<void>;
@@ -115,6 +121,9 @@ const defaultSettings: Settings = {
   },
   radio: {
     followRadio: true,
+  },
+  map: {
+    tileLayer: 'dark',
   },
 };
 
@@ -184,8 +193,23 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
       isDirty: true,
     })),
 
+  // Map settings
+  updateMapSettings: (map) =>
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        map: { ...state.settings.map, ...map },
+      },
+      isDirty: true,
+    })),
+
   // Save to backend (MongoDB via API)
   saveSettings: async () => {
+    const { isLoaded } = get();
+    if (!isLoaded) {
+      console.warn('Settings not loaded yet, refusing to save to prevent data loss');
+      return;
+    }
     set({ isSaving: true });
     try {
       const { settings } = get();
@@ -221,6 +245,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
           appearance: { ...defaultSettings.appearance, ...settings.appearance },
           rotator: { ...defaultSettings.rotator, ...settings.rotator },
           radio: { ...defaultSettings.radio, ...settings.radio },
+          map: { ...defaultSettings.map, ...settings.map },
         };
         set({ settings: mergedSettings, isDirty: false, isLoaded: true });
       } else {

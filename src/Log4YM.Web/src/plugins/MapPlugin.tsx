@@ -149,12 +149,14 @@ export function MapPlugin() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const { stationGrid, rotatorPosition, focusedCallsignInfo } = useAppStore();
-  const { settings } = useSettingsStore();
+  const { settings, updateMapSettings, saveSettings } = useSettingsStore();
   const { commandRotator } = useSignalR();
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [tileLayer, setTileLayer] = useState<TileLayerKey>('dark');
   const [currentAzimuth, setCurrentAzimuth] = useState(0);
   const [showLayerPicker, setShowLayerPicker] = useState(false);
+
+  // Get tile layer from persisted settings
+  const tileLayer = settings.map.tileLayer;
 
   // Rotator is enabled in settings
   const rotatorEnabled = settings.rotator.enabled;
@@ -365,7 +367,8 @@ export function MapPlugin() {
                     key={key}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setTileLayer(key as TileLayerKey);
+                      updateMapSettings({ tileLayer: key as TileLayerKey });
+                      saveSettings();
                       setShowLayerPicker(false);
                     }}
                     className={`w-full text-left px-2 py-1 text-sm rounded hover:bg-dark-600 ${
