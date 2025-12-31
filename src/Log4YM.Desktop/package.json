@@ -3,6 +3,11 @@
   "productName": "Log4YM",
   "version": "1.4.0",
   "description": "Log4YM - Amateur Radio Logging Desktop Application",
+  "homepage": "https://github.com/brianbruff/Log4YM",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brianbruff/Log4YM.git"
+  },
   "main": "main.js",
   "author": {
     "name": "Brian Keating",
