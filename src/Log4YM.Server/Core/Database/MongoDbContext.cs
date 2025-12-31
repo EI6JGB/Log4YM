@@ -7,27 +7,153 @@ namespace Log4YM.Server.Core.Database;
 
 public class MongoDbContext
 {
-    private readonly IMongoDatabase _database;
+    private IMongoDatabase? _database;
+    private MongoClient? _client;
+    private readonly IUserConfigService _userConfigService;
+    private readonly IConfiguration _configuration;
+    private bool _isInitialized;
+    private readonly object _initLock = new();
+    private string? _currentDatabaseName;
 
-    public MongoDbContext(IConfiguration configuration)
+    public MongoDbContext(IConfiguration configuration, IUserConfigService userConfigService)
     {
-        var connectionString = configuration["MongoDB:ConnectionString"] ?? "mongodb://localhost:27017";
-        var databaseName = configuration["MongoDB:DatabaseName"] ?? "log4ym";
+        _configuration = configuration;
+        _userConfigService = userConfigService;
 
-        Log.Information("MongoDB connecting to database: {DatabaseName}", databaseName);
-
-        var client = new MongoClient(connectionString);
-        _database = client.GetDatabase(databaseName);
-
-        CreateIndexes();
+        // Try to initialize, but don't fail if MongoDB is not configured
+        TryInitialize();
     }
 
-    public IMongoCollection<Qso> Qsos => _database.GetCollection<Qso>("qsos");
-    public IMongoCollection<Spot> Spots => _database.GetCollection<Spot>("spots");
-    public IMongoCollection<UserSettings> Settings => _database.GetCollection<UserSettings>("settings");
-    public IMongoCollection<PluginSettings> PluginSettings => _database.GetCollection<PluginSettings>("pluginSettings");
-    public IMongoCollection<Layout> Layouts => _database.GetCollection<Layout>("layouts");
-    public IMongoCollection<SmartUnlinkRadioEntity> SmartUnlinkRadios => _database.GetCollection<SmartUnlinkRadioEntity>("smartunlink_radios");
+    public bool IsConnected => _isInitialized && _database != null;
+
+    public string? DatabaseName => _currentDatabaseName;
+
+    public bool TryInitialize()
+    {
+        if (_isInitialized) return true;
+
+        lock (_initLock)
+        {
+            if (_isInitialized) return true;
+
+            try
+            {
+                var connectionString = GetConnectionString();
+                if (string.IsNullOrEmpty(connectionString))
+                {
+                    Log.Warning("MongoDB connection string not configured");
+                    return false;
+                }
+
+                var databaseName = GetDatabaseName();
+                _currentDatabaseName = databaseName;
+
+                Log.Information("MongoDB connecting to database: {DatabaseName}", databaseName);
+
+                _client = new MongoClient(connectionString);
+                _database = _client.GetDatabase(databaseName);
+
+                // Test connection with ping
+                _database.RunCommand<MongoDB.Bson.BsonDocument>(
+                    new MongoDB.Bson.BsonDocument("ping", 1));
+
+                CreateIndexes();
+                _isInitialized = true;
+
+                Log.Information("MongoDB connected successfully");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to connect to MongoDB");
+                _database = null;
+                _client = null;
+                _currentDatabaseName = null;
+                return false;
+            }
+        }
+    }
+
+    public async Task<bool> ReinitializeAsync(string connectionString, string databaseName)
+    {
+        // Reset state
+        lock (_initLock)
+        {
+            _isInitialized = false;
+            _database = null;
+            _client = null;
+            _currentDatabaseName = null;
+        }
+
+        // Save to user config
+        await _userConfigService.SaveConfigAsync(new UserConfig
+        {
+            MongoDbConnectionString = connectionString,
+            MongoDbDatabaseName = databaseName
+        });
+
+        return TryInitialize();
+    }
+
+    private string? GetConnectionString()
+    {
+        // Priority: 1) User config file, 2) appsettings.json
+        var config = _userConfigService.GetConfigAsync().GetAwaiter().GetResult();
+        if (!string.IsNullOrEmpty(config.MongoDbConnectionString))
+        {
+            return config.MongoDbConnectionString;
+        }
+        return _configuration["MongoDB:ConnectionString"];
+    }
+
+    private string GetDatabaseName()
+    {
+        var config = _userConfigService.GetConfigAsync().GetAwaiter().GetResult();
+        if (!string.IsNullOrEmpty(config.MongoDbDatabaseName))
+        {
+            return config.MongoDbDatabaseName;
+        }
+        return _configuration["MongoDB:DatabaseName"] ?? "Log4YM";
+    }
+
+    private void EnsureConnected()
+    {
+        if (!_isInitialized || _database == null)
+        {
+            throw new InvalidOperationException(
+                "MongoDB is not connected. Please complete the setup wizard.");
+        }
+    }
+
+    public IMongoCollection<Qso> Qsos
+    {
+        get { EnsureConnected(); return _database!.GetCollection<Qso>("qsos"); }
+    }
+
+    public IMongoCollection<Spot> Spots
+    {
+        get { EnsureConnected(); return _database!.GetCollection<Spot>("spots"); }
+    }
+
+    public IMongoCollection<UserSettings> Settings
+    {
+        get { EnsureConnected(); return _database!.GetCollection<UserSettings>("settings"); }
+    }
+
+    public IMongoCollection<PluginSettings> PluginSettings
+    {
+        get { EnsureConnected(); return _database!.GetCollection<PluginSettings>("pluginSettings"); }
+    }
+
+    public IMongoCollection<Layout> Layouts
+    {
+        get { EnsureConnected(); return _database!.GetCollection<Layout>("layouts"); }
+    }
+
+    public IMongoCollection<SmartUnlinkRadioEntity> SmartUnlinkRadios
+    {
+        get { EnsureConnected(); return _database!.GetCollection<SmartUnlinkRadioEntity>("smartunlink_radios"); }
+    }
 
     private void CreateIndexes()
     {

@@ -26,10 +26,13 @@ import {
   Loader2,
   FileDown,
   Database,
+  Server,
+  ExternalLink,
 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSettingsStore, SettingsSection } from '../store/settingsStore';
 import { useAppStore } from '../store/appStore';
+import { useSetupStore } from '../store/setupStore';
 import { api, AdifImportResponse } from '../api/client';
 
 // Settings navigation items
@@ -55,8 +58,14 @@ const SETTINGS_SECTIONS: { id: SettingsSection; name: string; icon: React.ReactN
   {
     id: 'logbook',
     name: 'Logbook',
-    icon: <Database className="w-5 h-5" />,
+    icon: <FileText className="w-5 h-5" />,
     description: 'Import and export ADIF files',
+  },
+  {
+    id: 'database',
+    name: 'Database',
+    icon: <Database className="w-5 h-5" />,
+    description: 'MongoDB connection settings',
   },
   {
     id: 'appearance',
@@ -767,6 +776,234 @@ function LogbookSettingsSection() {
   );
 }
 
+// Database Settings Section
+function DatabaseSettingsSection() {
+  const {
+    status,
+    connectionString,
+    databaseName,
+    setConnectionString,
+    setDatabaseName,
+    testConnection,
+    configure,
+    isTesting,
+    isLoading,
+    testResult,
+    error,
+    fetchStatus,
+    clearError,
+    clearTestResult,
+  } = useSetupStore();
+
+  const [showConnectionString, setShowConnectionString] = useState(false);
+
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
+
+  const handleTest = async () => {
+    clearError();
+    await testConnection();
+  };
+
+  const handleSave = async () => {
+    clearError();
+    const success = await configure();
+    if (success) {
+      // Refresh status after save
+      await fetchStatus();
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-gray-100 mb-1">Database Connection</h3>
+        <p className="text-sm text-gray-500">
+          Configure your MongoDB connection for QSO and settings storage.
+        </p>
+      </div>
+
+      {/* Connection Status */}
+      <div
+        className={`p-4 rounded-lg border ${
+          status?.isConnected
+            ? 'bg-green-500/10 border-green-500/30'
+            : 'bg-red-500/10 border-red-500/30'
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          {status?.isConnected ? (
+            <CheckCircle className="w-5 h-5 text-green-400" />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-red-400" />
+          )}
+          <div>
+            <p className={`font-medium ${status?.isConnected ? 'text-green-400' : 'text-red-400'}`}>
+              {status?.isConnected ? 'Connected' : 'Not Connected'}
+            </p>
+            {status?.databaseName && (
+              <p className="text-sm text-gray-400">Database: {status.databaseName}</p>
+            )}
+            {status?.configuredAt && (
+              <p className="text-xs text-gray-500">
+                Configured: {new Date(status.configuredAt).toLocaleString()}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* MongoDB Atlas link */}
+      <a
+        href="https://www.mongodb.com/atlas/database"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-2 text-sm text-accent-primary hover:underline"
+      >
+        <ExternalLink className="w-4 h-4" />
+        Get a free MongoDB Atlas cluster
+      </a>
+
+      {/* Connection String Input */}
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-300">
+            <Server className="w-4 h-4 text-accent-primary" />
+            MongoDB Connection String
+          </label>
+          <div className="relative">
+            <input
+              type={showConnectionString ? 'text' : 'password'}
+              value={connectionString}
+              onChange={(e) => {
+                setConnectionString(e.target.value);
+                clearTestResult();
+              }}
+              placeholder="mongodb+srv://user:password@cluster.mongodb.net/"
+              className="glass-input w-full pr-10 font-mono text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => setShowConnectionString(!showConnectionString)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-gray-300"
+            >
+              {showConnectionString ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          <p className="text-xs text-gray-600">
+            Your connection string is stored locally and never sent anywhere except MongoDB.
+          </p>
+        </div>
+
+        {/* Database Name Input */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-gray-300">Database Name</label>
+          <input
+            type="text"
+            value={databaseName}
+            onChange={(e) => {
+              setDatabaseName(e.target.value);
+              clearTestResult();
+            }}
+            placeholder="Log4YM"
+            className="glass-input w-full font-mono"
+          />
+          <p className="text-xs text-gray-600">
+            The database will be created automatically if it doesn't exist.
+          </p>
+        </div>
+      </div>
+
+      {/* Test Result */}
+      {testResult && (
+        <div
+          className={`p-4 rounded-lg border ${
+            testResult.success
+              ? 'bg-green-500/10 border-green-500/30'
+              : 'bg-red-500/10 border-red-500/30'
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            {testResult.success ? (
+              <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            )}
+            <div>
+              <p className={`font-medium ${testResult.success ? 'text-green-400' : 'text-red-400'}`}>
+                {testResult.message}
+              </p>
+              {testResult.serverInfo && (
+                <p className="text-sm text-gray-400 mt-1">
+                  Found {testResult.serverInfo.databaseCount} database(s) on server
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Display */}
+      {error && (
+        <div className="p-4 rounded-lg border bg-red-500/10 border-red-500/30">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <p className="text-red-400">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-3">
+        <button
+          onClick={handleTest}
+          disabled={!connectionString || isTesting}
+          className="glass-button px-4 py-2 flex items-center gap-2 disabled:opacity-50"
+        >
+          {isTesting ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Testing...
+            </>
+          ) : (
+            <>
+              <Database className="w-4 h-4" />
+              Test Connection
+            </>
+          )}
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={!connectionString || !testResult?.success || isLoading}
+          className="glass-button-success px-4 py-2 flex items-center gap-2 disabled:opacity-50"
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              Save & Reconnect
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Info */}
+      <div className="pt-4 border-t border-glass-100">
+        <p className="text-xs text-gray-600">
+          Log4YM uses MongoDB to store your QSOs, settings, and layout preferences. You can use a
+          free MongoDB Atlas cluster or a local MongoDB installation. Configuration is stored
+          locally on your device.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // Appearance Settings Section
 function AppearanceSettingsSection() {
   const { settings, updateAppearanceSettings } = useSettingsStore();
@@ -905,6 +1142,8 @@ export function SettingsPanel() {
         return <RotatorSettingsSection />;
       case 'logbook':
         return <LogbookSettingsSection />;
+      case 'database':
+        return <DatabaseSettingsSection />;
       case 'appearance':
         return <AppearanceSettingsSection />;
       case 'about':

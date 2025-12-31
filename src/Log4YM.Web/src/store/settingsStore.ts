@@ -61,7 +61,7 @@ export interface Settings {
   map: MapSettings;
 }
 
-export type SettingsSection = 'station' | 'qrz' | 'rotator' | 'logbook' | 'appearance' | 'about';
+export type SettingsSection = 'station' | 'qrz' | 'rotator' | 'logbook' | 'database' | 'appearance' | 'about';
 
 interface SettingsState {
   // Settings data

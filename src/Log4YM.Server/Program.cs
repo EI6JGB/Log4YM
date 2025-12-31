@@ -47,7 +47,10 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Register MongoDB context
+// Register user config service (must be before MongoDbContext)
+builder.Services.AddSingleton<IUserConfigService, UserConfigService>();
+
+// Register MongoDB context (now supports lazy initialization)
 builder.Services.AddSingleton<MongoDbContext>();
 
 // Register repositories

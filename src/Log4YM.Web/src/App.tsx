@@ -1,15 +1,17 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { Layout, Model, TabNode, TabSetNode, BorderNode, ITabSetRenderValues, Actions, DockLocation } from 'flexlayout-react';
-import { X, Radio, Book, Zap, LayoutGrid, Antenna, Plus, Map, Compass, Gauge, User } from 'lucide-react';
+import { X, Radio, Book, Zap, LayoutGrid, Antenna, Plus, Map, Compass, Gauge, User, Loader2 } from 'lucide-react';
 import { Header } from './components/Header';
 import { StatusBar } from './components/StatusBar';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ConnectionOverlay } from './components/ConnectionOverlay';
+import { SetupWizard } from './components/SetupWizard';
 import { useSignalR } from './hooks/useSignalR';
 import { LogEntryPlugin, LogHistoryPlugin, ClusterPlugin, MapPlugin, RotatorPlugin, GlobePlugin, AntennaGeniusPlugin, PgxlPlugin, SmartUnlinkPlugin, RadioPlugin, QrzProfilePlugin } from './plugins';
 import { Globe as Globe3D } from 'lucide-react';
 import { useLayoutStore, defaultLayout } from './store/layoutStore';
 import { useSettingsStore } from './store/settingsStore';
+import { useSetupStore } from './store/setupStore';
 
 import 'flexlayout-react/style/dark.css';
 
@@ -77,17 +79,46 @@ export function App() {
   const layoutRef = useRef<Layout>(null);
   const { layout, setLayout, resetLayout: resetLayoutStore } = useLayoutStore();
   const { loadSettings } = useSettingsStore();
+  const { fetchStatus } = useSetupStore();
   const [model, setModel] = useState<Model>(() => Model.fromJson(layout));
   const [showPanelPicker, setShowPanelPicker] = useState(false);
   const [targetTabSetId, setTargetTabSetId] = useState<string | null>(null);
+  const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
 
-  // Initialize SignalR connection
+  // Check setup status on mount
+  useEffect(() => {
+    fetchStatus().then(() => {
+      const currentStatus = useSetupStore.getState().status;
+      setSetupComplete(currentStatus?.isConnected ?? false);
+    });
+  }, [fetchStatus]);
+
+  // Initialize SignalR connection (only after setup is complete)
   useSignalR();
 
-  // Load settings from MongoDB on mount
+  // Load settings from MongoDB on mount (only after setup is complete)
   useEffect(() => {
-    loadSettings();
-  }, [loadSettings]);
+    if (setupComplete) {
+      loadSettings();
+    }
+  }, [loadSettings, setupComplete]);
+
+  // Show loading while checking setup status
+  if (setupComplete === null) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-dark-900">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-10 h-10 text-accent-primary animate-spin" />
+          <span className="text-gray-400">Starting Log4YM...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show setup wizard if not configured/connected
+  if (!setupComplete) {
+    return <SetupWizard onComplete={() => setSetupComplete(true)} />;
+  }
 
   // Update model when layout store changes (e.g., from localStorage hydration)
   useEffect(() => {
