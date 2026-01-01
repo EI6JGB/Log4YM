@@ -331,6 +331,17 @@ public class TciRadioService : BackgroundService
         return Task.CompletedTask;
     }
 
+    public async Task<bool> SetFrequencyAsync(string radioId, long frequencyHz)
+    {
+        if (!_connections.TryGetValue(radioId, out var connection))
+        {
+            _logger.LogWarning("Cannot set frequency: TCI radio {RadioId} not connected", radioId);
+            return false;
+        }
+
+        return await connection.SetFrequencyAsync(frequencyHz);
+    }
+
     public IEnumerable<RadioDiscoveredEvent> GetDiscoveredRadios()
     {
         return _discoveredRadios.Values.Select(d => new RadioDiscoveredEvent(
@@ -485,6 +496,17 @@ internal class TciRadioConnection
 
         var buffer = Encoding.UTF8.GetBytes(command);
         await _webSocket.SendAsync(buffer, WebSocketMessageType.Text, true, _cts!.Token);
+    }
+
+    public async Task<bool> SetFrequencyAsync(long frequencyHz)
+    {
+        if (!IsConnected) return false;
+
+        // TCI protocol: vfo:rx,channel,frequency; (rx=0/1, channel=0 for VFO-A)
+        var command = $"vfo:{_selectedInstance},0,{frequencyHz};";
+        _logger.LogDebug("Sending TCI command: {Command}", command);
+        await SendCommandAsync(command);
+        return true;
     }
 
     private async Task ReceiveLoopAsync(CancellationToken ct)
