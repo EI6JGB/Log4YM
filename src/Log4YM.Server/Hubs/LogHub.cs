@@ -221,11 +221,18 @@ public class LogHub : Hub<ILogHubClient>
         // Broadcast to ALL clients (including caller) so the log entry gets populated
         await Clients.All.OnSpotSelected(evt);
 
-        // TODO: Tune the connected radio to the spot frequency/mode
-        // This requires implementing SetFrequency/SetMode in the radio services:
-        // - HamlibService.SetFrequencyAsync(long freqHz)
-        // - FlexRadioService.SetFrequencyAsync(string radioId, long freqHz)
-        // - TciRadioService.SetFrequencyAsync(string radioId, long freqHz)
+        // Tune connected TCI radio (spot frequency is in kHz, TCI expects Hz)
+        var tciRadios = _tciRadioService.GetRadioStates().ToList();
+        if (tciRadios.Any())
+        {
+            var radioId = tciRadios.First().RadioId;
+            var frequencyHz = (long)(evt.Frequency * 1000);
+            var tuned = await _tciRadioService.SetFrequencyAsync(radioId, frequencyHz);
+            if (tuned)
+            {
+                _logger.LogInformation("Tuned TCI radio {RadioId} to {FrequencyMHz} MHz", radioId, evt.Frequency / 1000.0);
+            }
+        }
     }
 
     public async Task CommandRotator(RotatorCommandEvent evt)
@@ -625,6 +632,12 @@ public class LogHub : Hub<ILogHubClient>
         foreach (var state in _hamlibService.GetRadioStates())
         {
             await Clients.Caller.OnRadioStateChanged(state);
+        }
+
+        // Send current connection states so UI reflects actual connection status
+        foreach (var connState in _tciRadioService.GetConnectionStates())
+        {
+            await Clients.Caller.OnRadioConnectionStateChanged(connState);
         }
     }
 

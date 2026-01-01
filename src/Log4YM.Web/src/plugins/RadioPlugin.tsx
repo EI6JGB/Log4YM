@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Radio, Wifi, WifiOff, Search, Power, PowerOff, Plus, Settings, ChevronDown, ChevronUp } from "lucide-react";
+import { Radio, Wifi, WifiOff, Power, PowerOff, Plus, Settings, ChevronDown, ChevronUp } from "lucide-react";
 import { useAppStore } from "../store/appStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { useSignalR } from "../hooks/useSignalR";
@@ -51,11 +51,8 @@ export function RadioPlugin() {
   } = useAppStore();
 
   const {
-    startRadioDiscovery,
-    stopRadioDiscovery,
     connectRadio,
     disconnectRadio,
-    selectRadioSlice,
     getHamlibRigList,
     getHamlibRigCaps,
     getHamlibSerialPorts,
@@ -65,9 +62,6 @@ export function RadioPlugin() {
     connectTci,
     disconnectTci,
   } = useSignalR();
-
-  const [selectedType, setSelectedType] = useState<'FlexRadio' | 'Tci' | null>(null);
-  const [isDiscovering, setIsDiscovering] = useState(false);
 
   // TCI settings from store (persisted to database)
   const { settings, updateTciSettings, saveSettings } = useSettingsStore();
@@ -163,19 +157,6 @@ export function RadioPlugin() {
       setIsConnectingHamlib(false);
     }
   }, [selectedConnectionState, selectedRadioState]);
-
-  const handleStartDiscovery = async (type: 'FlexRadio' | 'Tci') => {
-    setSelectedType(type);
-    setIsDiscovering(true);
-    await startRadioDiscovery(type);
-  };
-
-  const handleStopDiscovery = async () => {
-    if (selectedType) {
-      await stopRadioDiscovery(selectedType);
-    }
-    setIsDiscovering(false);
-  };
 
   const handleConnect = async (radioId: string) => {
     setSelectedRadio(radioId);
@@ -401,31 +382,6 @@ export function RadioPlugin() {
             )}
           </div>
 
-          {/* Slice Selection for FlexRadio */}
-          {selectedRadio?.type === "FlexRadio" &&
-            selectedRadio.slices &&
-            selectedRadio.slices.length > 0 && (
-              <div className="mt-4">
-                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">
-                  Select Slice
-                </div>
-                <div className="flex gap-2">
-                  {selectedRadio.slices.map((slice) => (
-                    <button
-                      key={slice}
-                      onClick={() => selectRadioSlice(selectedRadio.id, slice)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                        selectedRadioState?.sliceOrInstance === slice
-                          ? "bg-accent-primary/20 text-accent-primary border border-accent-primary/30"
-                          : "bg-dark-700 text-gray-400 hover:bg-dark-600 border border-glass-100"
-                      }`}
-                    >
-                      Slice {slice}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
         </div>
       </GlassPanel>
     );
@@ -436,17 +392,6 @@ export function RadioPlugin() {
     <GlassPanel
       title="Radio"
       icon={<Radio className="w-5 h-5" />}
-      actions={
-        isDiscovering ? (
-          <button
-            onClick={handleStopDiscovery}
-            className="flex items-center gap-1.5 px-2 py-1 text-xs text-amber-400 hover:bg-amber-500/10 rounded transition-all"
-          >
-            <Search className="w-3.5 h-3.5 animate-pulse" />
-            Stop
-          </button>
-        ) : null
-      }
     >
       <div className="p-4 space-y-4">
         {/* Radio Type Selection */}
@@ -454,31 +399,16 @@ export function RadioPlugin() {
           <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">
             Radio Type
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              onClick={() => handleStartDiscovery("FlexRadio")}
-              disabled={isDiscovering || showHamlibForm || showTciForm}
-              className={`px-4 py-3 rounded-lg text-sm font-medium transition-all border ${
-                selectedType === "FlexRadio" && isDiscovering
-                  ? "bg-accent-primary/20 text-accent-primary border-accent-primary/30"
-                  : "bg-dark-700 text-gray-300 hover:bg-dark-600 border-glass-100 disabled:opacity-50"
-              }`}
-            >
-              <div className="flex flex-col items-center gap-1">
-                <Radio className="w-5 h-5" />
-                <span>FlexRadio</span>
-              </div>
-            </button>
+          <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => {
                 setShowTciForm(!showTciForm);
                 setShowHamlibForm(false);
               }}
-              disabled={isDiscovering}
               className={`px-4 py-3 rounded-lg text-sm font-medium transition-all border ${
                 showTciForm
                   ? "bg-purple-500/20 text-purple-400 border-purple-500/30"
-                  : "bg-dark-700 text-gray-300 hover:bg-dark-600 border-glass-100 disabled:opacity-50"
+                  : "bg-dark-700 text-gray-300 hover:bg-dark-600 border-glass-100"
               }`}
             >
               <div className="flex flex-col items-center gap-1">
@@ -491,11 +421,10 @@ export function RadioPlugin() {
                 setShowHamlibForm(!showHamlibForm);
                 setShowTciForm(false);
               }}
-              disabled={isDiscovering}
               className={`px-4 py-3 rounded-lg text-sm font-medium transition-all border ${
                 showHamlibForm
                   ? "bg-orange-500/20 text-orange-400 border-orange-500/30"
-                  : "bg-dark-700 text-gray-300 hover:bg-dark-600 border-glass-100 disabled:opacity-50"
+                  : "bg-dark-700 text-gray-300 hover:bg-dark-600 border-glass-100"
               }`}
             >
               <div className="flex flex-col items-center gap-1">
@@ -860,6 +789,18 @@ export function RadioPlugin() {
                 className="w-full px-3 py-2 bg-dark-800 border border-glass-100 rounded-lg text-sm text-gray-200 focus:outline-none focus:border-purple-500/50"
               />
             </div>
+            <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={tciSettings.autoConnect}
+                onChange={(e) => {
+                  updateTciSettings({ autoConnect: e.target.checked });
+                  saveSettings();
+                }}
+                className="w-4 h-4 rounded border-glass-100 bg-dark-800 text-purple-500 focus:ring-purple-500/50"
+              />
+              Auto-connect on startup
+            </label>
             <div className="flex gap-2 pt-2">
               <button
                 onClick={handleConnectTci}
@@ -907,9 +848,7 @@ export function RadioPlugin() {
                     <div className="flex items-center gap-3">
                       <div
                         className={`p-2 rounded-lg ${
-                          radio.type === "FlexRadio"
-                            ? "bg-blue-500/20"
-                            : radio.type === "Hamlib"
+                          radio.type === "Hamlib"
                             ? "bg-orange-500/20"
                             : "bg-purple-500/20"
                         }`}
@@ -917,13 +856,7 @@ export function RadioPlugin() {
                         {radio.type === "Hamlib" ? (
                           <Settings className="w-4 h-4 text-orange-400" />
                         ) : (
-                          <Radio
-                            className={`w-4 h-4 ${
-                              radio.type === "FlexRadio"
-                                ? "text-blue-400"
-                                : "text-purple-400"
-                            }`}
-                          />
+                          <Radio className="w-4 h-4 text-purple-400" />
                         )}
                       </div>
                       <div>
@@ -956,14 +889,6 @@ export function RadioPlugin() {
                 );
               })}
             </div>
-          </div>
-        ) : isDiscovering ? (
-          <div className="flex flex-col items-center justify-center py-8 text-gray-500">
-            <Search className="w-8 h-8 mb-3 animate-pulse" />
-            <p className="text-sm">Searching for {selectedType} radios...</p>
-            <p className="text-xs text-gray-600 mt-1">
-              {selectedType === "FlexRadio" ? "UDP port 4992" : "UDP port 1024"}
-            </p>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-8 text-gray-500">
