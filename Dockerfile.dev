@@ -1,5 +1,5 @@
 # Development Dockerfile for hot reload
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dev
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dev
 WORKDIR /app
 
 # Install tools

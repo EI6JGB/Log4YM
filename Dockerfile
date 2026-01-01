@@ -10,7 +10,7 @@ COPY src/Log4YM.Web/ ./
 RUN npm run build
 
 # Build stage for .NET
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS backend-build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
 WORKDIR /app
 
 # Copy csproj files and restore
@@ -27,7 +27,7 @@ RUN dotnet publish src/Log4YM.Server/Log4YM.Server.csproj -c Release -o /app/pub
 COPY --from=frontend-build /app/frontend/dist /app/publish/wwwroot
 
 # Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
 WORKDIR /app
 
 # Install icu-libs for globalization support

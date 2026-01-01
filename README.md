@@ -69,7 +69,7 @@ Open http://localhost:5000 in your browser.
 
 #### Prerequisites
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [Node.js 18+](https://nodejs.org/)
 
 #### Development Mode (Hot Reload)

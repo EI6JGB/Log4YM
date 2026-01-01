@@ -519,11 +519,11 @@ public static class PluginLoader
 | WebSocket | SignalR Client | Native .NET SignalR integration |
 | Maps | Leaflet + CesiumJS | 2D/3D mapping |
 
-#### Backend (.NET 8 / ASP.NET Core)
+#### Backend (.NET 10 / ASP.NET Core)
 
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
-| Runtime | .NET 8 | LTS, high performance, cross-platform |
+| Runtime | .NET 10 | LTS, high performance, cross-platform |
 | Framework | ASP.NET Core Minimal APIs | Fast, clean routing, excellent for APIs |
 | Real-time | SignalR | WebSocket abstraction with fallback, strongly typed hubs |
 | UDP | System.Net.Sockets | Native UDP multicast support |
@@ -1717,7 +1717,7 @@ gantt
 
 ### Phase 1: Foundation
 
-- [ ] Initialize solution (.NET 8 + pnpm workspace)
+- [ ] Initialize solution (.NET 10 + pnpm workspace)
 - [ ] Create ASP.NET Core server with MongoDB
 - [ ] Create React SPA with Vite
 - [ ] Implement SignalR real-time communication
@@ -1843,11 +1843,11 @@ volumes:
 ```dockerfile
 # src/Log4YM.Server/Dockerfile
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 EXPOSE 5000
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy solution and restore

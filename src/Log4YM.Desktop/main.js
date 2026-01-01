@@ -66,7 +66,7 @@ function getBackendPath() {
     return path.join(process.resourcesPath, 'backend', execName);
   } else {
     // In development, use the published output
-    return path.join(__dirname, '..', 'Log4YM.Server', 'bin', 'Release', 'net8.0', runtimeId, 'publish', execName);
+    return path.join(__dirname, '..', 'Log4YM.Server', 'bin', 'Release', 'net10.0', runtimeId, 'publish', execName);
   }
 }
 

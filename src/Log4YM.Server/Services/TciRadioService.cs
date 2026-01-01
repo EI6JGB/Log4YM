@@ -18,7 +18,7 @@ public class TciRadioService : BackgroundService
 {
     private readonly ILogger<TciRadioService> _logger;
     private readonly IHubContext<LogHub, ILogHubClient> _hubContext;
-    private readonly ISettingsRepository _settingsRepository;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ConcurrentDictionary<string, TciRadioDevice> _discoveredRadios = new();
     private readonly ConcurrentDictionary<string, TciRadioConnection> _connections = new();
 
@@ -34,11 +34,11 @@ public class TciRadioService : BackgroundService
     public TciRadioService(
         ILogger<TciRadioService> logger,
         IHubContext<LogHub, ILogHubClient> hubContext,
-        ISettingsRepository settingsRepository)
+        IServiceScopeFactory scopeFactory)
     {
         _logger = logger;
         _hubContext = hubContext;
-        _settingsRepository = settingsRepository;
+        _scopeFactory = scopeFactory;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -60,7 +60,9 @@ public class TciRadioService : BackgroundService
     {
         try
         {
-            var settings = await _settingsRepository.GetAsync();
+            using var scope = _scopeFactory.CreateScope();
+            var settingsRepository = scope.ServiceProvider.GetRequiredService<ISettingsRepository>();
+            var settings = await settingsRepository.GetAsync();
             var tciSettings = settings?.Radio?.Tci;
 
             if (tciSettings is { AutoConnect: true } && !string.IsNullOrEmpty(tciSettings.Host))
