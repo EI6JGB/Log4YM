@@ -133,8 +133,11 @@ public class HamlibService : BackgroundService
     /// </summary>
     public RigCapabilities GetRigCapabilities(int modelId)
     {
-        if (!_initialized) return new RigCapabilities();
-        return RigCapabilities.GetForModel(modelId);
+        if (!_initialized) return new RigCapabilities { SupportsSerial = true, SupportsNetwork = false };
+
+        // Look up model info to pass manufacturer/model names for better detection
+        var modelInfo = GetAvailableRigs().FirstOrDefault(r => r.ModelId == modelId);
+        return RigCapabilities.GetForModel(modelId, modelInfo?.Manufacturer, modelInfo?.Model);
     }
 
     /// <summary>

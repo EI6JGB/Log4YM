@@ -139,12 +139,16 @@ public sealed class HamlibRig : IDisposable
             var result = HamlibNative.rig_set_conf(_rig, token, value);
             if (result != RigError.RIG_OK)
             {
-                _logger?.LogDebug("Failed to set {Name}={Value}: {Error}", name, value, GetErrorString(result));
+                _logger?.LogWarning("Failed to set {Name}={Value}: {Error}", name, value, GetErrorString(result));
+            }
+            else
+            {
+                _logger?.LogInformation("Set config {Name}={Value}", name, value);
             }
         }
         else
         {
-            _logger?.LogDebug("Config token not found: {Name}", name);
+            _logger?.LogWarning("Config token not found: {Name} (value was: {Value})", name, value);
         }
     }
 
@@ -725,25 +729,26 @@ public record RigCapabilities
     public int DefaultDataBits { get; init; }
     public int DefaultStopBits { get; init; }
     public bool IsNetworkOnly { get; init; }
+    public bool SupportsSerial { get; init; }
+    public bool SupportsNetwork { get; init; }
 
     /// <summary>
     /// Get capabilities for a specific rig model
     /// Note: This requires creating a temporary rig instance
     /// </summary>
-    public static RigCapabilities GetForModel(int modelId)
+    public static RigCapabilities GetForModel(int modelId, string? manufacturer = null, string? model = null)
     {
         var capsPtr = HamlibNative.rig_get_caps(modelId);
         if (capsPtr == IntPtr.Zero)
         {
-            return new RigCapabilities();
+            return new RigCapabilities { SupportsSerial = true, SupportsNetwork = false };
         }
 
-        // The rig_caps structure is complex - we need to create a rig instance
-        // to properly check capabilities
-        var isNetworkOnly = modelId == RigModel.RIG_MODEL_NETRIGCTL;
+        // Determine connection type support based on known models
+        var connectionTypes = RigConnectionTypeHelper.GetSupportedConnectionTypes(modelId, manufacturer, model);
 
-        // For network rigs, assume broad capability (actual caps known after connect)
-        if (isNetworkOnly)
+        // For network-only rigs, assume broad capability (actual caps known after connect)
+        if (connectionTypes.IsNetworkOnly)
         {
             return new RigCapabilities
             {
@@ -758,7 +763,9 @@ public record RigCapabilities
                 CanSendMorse = true,
                 DefaultDataBits = 8,
                 DefaultStopBits = 1,
-                IsNetworkOnly = true
+                IsNetworkOnly = true,
+                SupportsSerial = connectionTypes.SupportsSerial,
+                SupportsNetwork = connectionTypes.SupportsNetwork
             };
         }
 
@@ -778,7 +785,102 @@ public record RigCapabilities
             CanSendMorse = false, // Be conservative on morse
             DefaultDataBits = 8,
             DefaultStopBits = 1,
-            IsNetworkOnly = false
+            IsNetworkOnly = false,
+            SupportsSerial = connectionTypes.SupportsSerial,
+            SupportsNetwork = connectionTypes.SupportsNetwork
         };
+    }
+}
+
+/// <summary>
+/// Helper to determine supported connection types for rig models
+/// </summary>
+public static class RigConnectionTypeHelper
+{
+    /// <summary>
+    /// Known network-only rig model IDs
+    /// </summary>
+    private static readonly HashSet<int> NetworkOnlyModels = new()
+    {
+        RigModel.RIG_MODEL_NETRIGCTL, // 2 - NET rigctld
+        2036,  // FlexRadio 6xxx (Stable) - uses SmartSDR API
+        2037,  // FlexRadio 6xxx (Beta)
+        2038,  // FlexRadio 6xxx (Alpha)
+        2501,  // SDRPlay
+        2502,  // SDRPlay (Experimental)
+        // Apache Labs ANAN SDRs
+        2601,  // Apache Labs ANAN-10
+        2602,  // Apache Labs ANAN-100
+        2603,  // Apache Labs ANAN-100D
+        2604,  // Apache Labs ANAN-200D
+        2605,  // Apache Labs ANAN-7000DLE
+        2606,  // Apache Labs ANAN-8000DLE
+        // TRX-Manager network
+        2901,
+    };
+
+    /// <summary>
+    /// Known serial-only rig model IDs (most traditional rigs)
+    /// </summary>
+    private static readonly HashSet<int> SerialOnlyModels = new()
+    {
+        // Most traditional rigs are serial-only, but we default to serial+network
+        // to allow flexibility. Only explicitly mark those that MUST be serial.
+    };
+
+    /// <summary>
+    /// Manufacturer/model patterns that indicate network-only support
+    /// </summary>
+    private static readonly string[] NetworkOnlyPatterns = new[]
+    {
+        "FlexRadio",
+        "Flex 6",
+        "ANAN",
+        "Apache Labs",
+        "SDRPlay",
+        "PowerSDR",
+        "Thetis",
+        "piHPSDR",
+        "OpenHPSDR"
+    };
+
+    public record ConnectionTypeInfo(bool SupportsSerial, bool SupportsNetwork, bool IsNetworkOnly);
+
+    /// <summary>
+    /// Determine supported connection types for a rig model
+    /// </summary>
+    public static ConnectionTypeInfo GetSupportedConnectionTypes(int modelId, string? manufacturer = null, string? model = null)
+    {
+        // Check known network-only models
+        if (NetworkOnlyModels.Contains(modelId))
+        {
+            return new ConnectionTypeInfo(SupportsSerial: false, SupportsNetwork: true, IsNetworkOnly: true);
+        }
+
+        // Check model ID 2 (NET rigctld) explicitly
+        if (modelId == RigModel.RIG_MODEL_NETRIGCTL)
+        {
+            return new ConnectionTypeInfo(SupportsSerial: false, SupportsNetwork: true, IsNetworkOnly: true);
+        }
+
+        // Check known serial-only models
+        if (SerialOnlyModels.Contains(modelId))
+        {
+            return new ConnectionTypeInfo(SupportsSerial: true, SupportsNetwork: false, IsNetworkOnly: false);
+        }
+
+        // Check manufacturer/model name patterns
+        var fullName = $"{manufacturer} {model}".ToUpperInvariant();
+        foreach (var pattern in NetworkOnlyPatterns)
+        {
+            if (fullName.Contains(pattern.ToUpperInvariant()))
+            {
+                return new ConnectionTypeInfo(SupportsSerial: false, SupportsNetwork: true, IsNetworkOnly: true);
+            }
+        }
+
+        // Default: Most traditional rigs support serial, but we also allow network
+        // for cases like rigctld proxying
+        return new ConnectionTypeInfo(SupportsSerial: true, SupportsNetwork: true, IsNetworkOnly: false);
     }
 }
