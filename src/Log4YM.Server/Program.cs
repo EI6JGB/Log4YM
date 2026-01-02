@@ -6,12 +6,10 @@ using Log4YM.Server.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Listen on all interfaces for development (allows access via IP)
-// Use HTTPS to ensure secure context for WebGL features like globe.gl
-if (builder.Environment.IsDevelopment())
-{
-    builder.WebHost.UseUrls("http://0.0.0.0:5000", "https://0.0.0.0:5001");
-}
+// Note: URLs are controlled via ASPNETCORE_URLS environment variable
+// When running from Electron, main.js sets this to http://localhost:{port}
+// For standalone development, run with: ASPNETCORE_URLS=http://localhost:5000 dotnet run
+// We don't use UseUrls() here as it would override the environment variable
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
